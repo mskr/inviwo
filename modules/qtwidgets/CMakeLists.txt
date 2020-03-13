@@ -194,10 +194,10 @@ source_group("Resource Files" FILES
 
 #--------------------------------------------------------------------
 # Create module
-ivw_create_module(NO_PCH ${SOURCE_FILES} ${MOCED_FILES} ${QRC_FILE} ${HEADER_FILES})
+ivw_create_module(${SOURCE_FILES} ${MOCED_FILES} ${QRC_FILE} ${HEADER_FILES})
 target_link_libraries(inviwo-module-qtwidgets PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Svg)
 
-ivw_compile_optimize_on_target(inviwo-module-qtwidgets)
+#ivw_compile_optimize_on_target(inviwo-module-qtwidgets)
 
 ivw_make_package(InviwoQtWidgetsModule inviwo-module-qtwidgets)
 ivw_qt_add_to_install(qt_widgets Qt5Core Qt5Gui Qt5Widgets Qt5Svg)
