@@ -54,7 +54,7 @@ const ProcessorInfo StreamParticles::processorInfo_{
 };
 const ProcessorInfo StreamParticles::getProcessorInfo() const { return processorInfo_; }
 
-StreamParticles::StreamParticles(InviwoApplication *app) : Processor() {
+StreamParticles::StreamParticles(InviwoApplication* app) : Processor() {
 
     addPort(volume_);
     addPort(seeds_);
@@ -73,8 +73,6 @@ StreamParticles::StreamParticles(InviwoApplication *app) : Processor() {
 
     seedingSpace_.onChange([=]() { buffersDirty_ = true; });
     seeds_.onChange([=]() { buffersDirty_ = true; });
-
-    timer_.start();
 }
 
 void StreamParticles::initializeResources() {
@@ -88,6 +86,11 @@ void StreamParticles::process() {
     reseed();
     advect();
     meshPort_.setData(mesh_);
+
+    if (!timer_.isRunning()) {
+        timer_.start();
+    }
+
     ready_ = true;
 }
 
@@ -110,8 +113,8 @@ void StreamParticles::initBuffers() {
     std::mt19937 rand;
     std::uniform_real_distribution<float> dist(0, 1);
 
-    auto &positions = bufPos_->getEditableRAMRepresentation()->getDataContainer();
-    auto &lifes = bufLife_->getEditableRAMRepresentation()->getDataContainer();
+    auto& positions = bufPos_->getEditableRAMRepresentation()->getDataContainer();
+    auto& lifes = bufLife_->getEditableRAMRepresentation()->getDataContainer();
 
     if (seedingSpace_.get() == SeedingSpace::World) {
         std::transform(seeds->begin(), seeds->end(), positions.begin(),
@@ -147,8 +150,8 @@ void StreamParticles::reseed() {
     if (curT >= reseedtime_ + reseedInterval_.get()) {
         auto seeds = seeds_.getData();
 
-        auto &positions = bufPos_->getEditableRAMRepresentation()->getDataContainer();
-        auto &lifes = bufLife_->getEditableRAMRepresentation()->getDataContainer();
+        auto& positions = bufPos_->getEditableRAMRepresentation()->getDataContainer();
+        auto& lifes = bufLife_->getEditableRAMRepresentation()->getDataContainer();
 
         std::mt19937 rand;
         std::uniform_int_distribution<size_t> dist(0, seeds->size());
