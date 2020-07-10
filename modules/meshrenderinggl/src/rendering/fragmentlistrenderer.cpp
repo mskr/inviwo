@@ -60,13 +60,18 @@ FragmentListRenderer::Illustration::Illustration(size2_t screenSize, size_t frag
     , smooth{"oit/simplequad.vert", "illustration/smooth.frag", false}
     , settings{} {
 
+    LGL_ERROR;
     index.initialize(nullptr);
+    LGL_ERROR;
     count.initialize(nullptr);
+    LGL_ERROR;
 
     fill.onReload([this]() { onReload.invoke(); });
     neighbors.onReload([this]() { onReload.invoke(); });
     draw.onReload([this]() { onReload.invoke(); });
     smooth.onReload([this]() { onReload.invoke(); });
+
+    LGL_ERROR;
 }
 
 FragmentListRenderer::FragmentListRenderer()
@@ -84,13 +89,17 @@ FragmentListRenderer::FragmentListRenderer()
     , display_("oit/simplequad.vert", "oit/display.frag", false)
     , illustration_{screenSize_, fragmentSize_} {
 
+    LGL_ERROR;
     buildShaders();
+    LGL_ERROR;
 
     illustrationOnReload_ = illustration_.onReload.add([this]() { onReload_.invoke(); });
     clear_.onReload([this]() { onReload_.invoke(); });
     display_.onReload([this]() { onReload_.invoke(); });
+    LGL_ERROR;
 
     abufferIdxTex_.initialize(nullptr);
+    LGL_ERROR;
 
     // create fragment query
     glGenQueries(1, &totalFragmentQuery_);

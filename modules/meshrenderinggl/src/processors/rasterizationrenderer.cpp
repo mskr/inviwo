@@ -84,9 +84,12 @@ RasterizationRenderer::RasterizationRenderer()
     , trackball_(&camera_)
     , flr_() {
 
+    LGL_ERROR;
     // query OpenGL Capability
     supportsFragmentLists_ = FragmentListRenderer::supportsFragmentLists();
+    LGL_ERROR;
     supportesIllustration_ = FragmentListRenderer::supportsIllustration();
+    LGL_ERROR;
     if (!supportsFragmentLists_) {
         LogProcessorWarn(
             "Fragment lists are not supported by the hardware -> use blending without sorting, may "
@@ -118,6 +121,7 @@ RasterizationRenderer::RasterizationRenderer()
             intermediateImage_.setDimensions(outport_.getData()->getDimensions());
         }
     });
+    LGL_ERROR;
 }
 
 RasterizationRenderer::IllustrationSettings::IllustrationSettings()
