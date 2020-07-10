@@ -53,7 +53,8 @@ struct LogErrorCheck {
     }
     ~LogErrorCheck() {
         EXPECT_EQ(0, logCounter_->getErrorCount())
-            << "Processor " << procName_ << " produced errors: " << stringLog_->getLog();
+            << "Processor " << procName_ << " produced errors: " << std::endl
+            << stringLog_->getLog();
     }
 
     std::shared_ptr<LogErrorCounter> logCounter_;
