@@ -39,6 +39,8 @@
 #include <inviwo/core/util/stringlogger.h>
 #include <inviwo/core/common/inviwoapplication.h>
 
+#include <modules/opengl/inviwoopengl.h>
+
 namespace inviwo {
 
 namespace {
@@ -81,6 +83,7 @@ protected:
 };
 
 TEST_P(ProcessorCreationTests, ProcesorCreateAndResetAndAddToNetwork) {
+    LGL_ERROR;
     LogErrorCheck checklog(GetParam());
     auto s = factory_->create(GetParam());
     ASSERT_TRUE(s.get() != nullptr) << "Could not create processor " << GetParam();
