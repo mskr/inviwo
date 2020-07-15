@@ -43,6 +43,7 @@
 #include <inviwo/core/network/workspacemanager.h>
 #include <inviwo/core/network/processornetwork.h>
 #include <inviwo/core/util/logcentral.h>
+#include <inviwo/core/util/consolelogger.h>
 #include <inviwo/core/util/utilities.h>
 #include <inviwo/core/util/raiiutils.h>
 #include <inviwo/core/util/logerrorcounter.h>
@@ -73,6 +74,8 @@ int main(int argc, char** argv) {
         util::OnScopeExit deleteLogcentral([]() { LogCentral::deleteInstance(); });
 
         auto logCounter = std::make_shared<LogErrorCounter>();
+        auto console = std::make_shared<ConsoleLogger>();
+        LogCentral::getPtr()->registerLogger(console);
         LogCentral::getPtr()->registerLogger(logCounter);
 
         InviwoApplication inviwoApp(argc, argv, "Inviwo-IntegrationTests");
