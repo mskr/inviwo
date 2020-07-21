@@ -27,8 +27,7 @@
  *
  *********************************************************************************/
 
-#ifndef IVW_PROPERTYWIDGETQT_H
-#define IVW_PROPERTYWIDGETQT_H
+#pragma once
 
 #include <modules/qtwidgets/qtwidgetsmoduledefine.h>
 #include <inviwo/core/properties/propertyvisibility.h>
@@ -39,6 +38,7 @@
 #include <warn/ignore/all>
 #include <QWidget>
 #include <warn/pop>
+#include <memory>
 
 class QMenu;
 class QMimeData;
@@ -128,5 +128,3 @@ private:
 };
 
 }  // namespace inviwo
-
-#endif  // IVW_PROPERTYWIDGETQT_H

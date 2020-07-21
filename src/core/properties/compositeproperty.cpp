@@ -32,6 +32,7 @@
 #include <inviwo/core/common/inviwoapplication.h>
 #include <inviwo/core/network/networklock.h>
 #include <inviwo/core/util/stringconversion.h>
+#include <inviwo/core/network/networkvisitor.h>
 
 namespace inviwo {
 
@@ -43,7 +44,7 @@ CompositeProperty::CompositeProperty(const std::string& identifier, const std::s
                                      PropertySemantics semantics)
     : Property(identifier, displayName, invalidationLevel, semantics)
     , PropertyOwner()
-    , collapsed_(false)
+    , collapsed_("collapsed", false)
     , subPropertyInvalidationLevel_(InvalidationLevel::Valid) {}
 
 CompositeProperty* CompositeProperty::clone() const { return new CompositeProperty(*this); }
@@ -98,7 +99,8 @@ void CompositeProperty::setValid() {
 
 CompositeProperty& CompositeProperty::setCurrentStateAsDefault() {
     Property::setCurrentStateAsDefault();
-    for (auto& elem : properties_) {
+    collapsed_.setAsDefault();
+    for (auto elem : properties_) {
         elem->setCurrentStateAsDefault();
     }
     return *this;
@@ -106,7 +108,7 @@ CompositeProperty& CompositeProperty::setCurrentStateAsDefault() {
 
 CompositeProperty& CompositeProperty::resetToDefaultState() {
     NetworkLock lock(this);
-    for (auto& elem : properties_) {
+    for (auto elem : properties_) {
         elem->resetToDefaultState();
     }
     return *this;
@@ -123,13 +125,13 @@ CompositeProperty& CompositeProperty::setReadOnly(bool value) {
 void CompositeProperty::serialize(Serializer& s) const {
     Property::serialize(s);
     PropertyOwner::serialize(s);
-    s.serialize("collapsed", collapsed_);
+    collapsed_.serialize(s, serializationMode_);
 }
 
 void CompositeProperty::deserialize(Deserializer& d) {
     Property::deserialize(d);
     PropertyOwner::deserialize(d);
-    d.deserialize("collapsed", collapsed_);
+    collapsed_.deserialize(d, serializationMode_);
 }
 
 std::vector<std::string> CompositeProperty::getPath() const {
@@ -139,6 +141,14 @@ std::vector<std::string> CompositeProperty::getPath() const {
     }
     path.push_back(getIdentifier());
     return path;
+}
+
+void CompositeProperty::accept(NetworkVisitor& visitor) {
+    if (visitor.visit(*this)) {
+        for (auto* elem : properties_) {
+            elem->accept(visitor);
+        }
+    }
 }
 
 Processor* CompositeProperty::getProcessor() {
@@ -158,11 +168,12 @@ const Processor* CompositeProperty::getProcessor() const {
 }
 
 bool CompositeProperty::isCollapsed() const { return collapsed_; }
-void CompositeProperty::setCollapsed(bool value) {
+CompositeProperty& CompositeProperty::setCollapsed(bool value) {
     if (collapsed_ != value) {
         collapsed_ = value;
         notifyObserversOnSetCollapsed(collapsed_);
     }
+    return *this;
 }
 
 }  // namespace inviwo

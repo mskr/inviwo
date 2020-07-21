@@ -77,6 +77,7 @@
 #include <modules/base/processors/volumesource.h>
 #include <modules/base/processors/volumeexport.h>
 #include <modules/base/processors/volumebasistransformer.h>
+#include <modules/base/processors/volumeshifter.h>
 #include <modules/base/processors/volumeslice.h>
 #include <modules/base/processors/volumesubsample.h>
 #include <modules/base/processors/volumesubset.h>
@@ -103,7 +104,6 @@
 #include <modules/base/properties/bufferinformationproperty.h>
 #include <modules/base/properties/volumeinformationproperty.h>
 #include <modules/base/properties/sequencetimerproperty.h>
-#include <modules/base/properties/stipplingproperty.h>
 
 // Io
 #include <modules/base/io/binarystlwriter.h>
@@ -203,6 +203,7 @@ BaseModule::BaseModule(InviwoApplication* app) : InviwoModule(app, "Base") {
     registerProcessor<MeshConverterProcessor>();
     registerProcessor<VolumeInformation>();
     registerProcessor<TFSelector>();
+    registerProcessor<VolumeShifter>();
 
     // input selectors
     registerProcessor<InputSelector<MultiDataInport<Volume>, VolumeOutport>>();
@@ -221,12 +222,12 @@ BaseModule::BaseModule(InviwoApplication* app) : InviwoModule(app, "Base") {
 
     registerProperty<Gaussian1DProperty>();
     registerProperty<Gaussian2DProperty>();
-    registerProperty<StipplingProperty>();
 
     registerProperty<transform::TranslateProperty>();
     registerProperty<transform::RotateProperty>();
     registerProperty<transform::ScaleProperty>();
     registerProperty<transform::CustomTransformProperty>();
+    registerProperty<TransformListProperty>();
 
     // Register Data readers
     registerDataReader(std::make_unique<DatVolumeSequenceReader>());

@@ -80,6 +80,8 @@ RasterizationRenderer::RasterizationRenderer()
     , imageInport_(std::make_shared<ImageInport>("imageInport"))
     , outport_("image")
     , intermediateImage_()
+    , camera_("camera", "Camera")
+    , trackball_(&camera_)
     , flr_() {
 
     // query OpenGL Capability
@@ -101,14 +103,21 @@ RasterizationRenderer::RasterizationRenderer()
     addPort(*imageInport_).setOptional(true);
     addPort(outport_);
 
-    addProperties(illustrationSettings_.enabled_);
+    addProperties(camera_, trackball_, illustrationSettings_.enabled_);
+    camera_.setCollapsed(true);
+    trackball_.setCollapsed(true);
 
     illustrationSettings_.enabled_.setReadOnly(!supportesIllustration_);
 
     flrReload_ = flr_.onReload([this]() { invalidate(InvalidationLevel::InvalidResources); });
 
-    imageInport_->onChange(
-        [this]() { intermediateImage_.setDimensions(imageInport_->getData()->getDimensions()); });
+    imageInport_->onChange([this]() {
+        if (imageInport_->hasData()) {
+            intermediateImage_.setDimensions(imageInport_->getData()->getDimensions());
+        } else {
+            intermediateImage_.setDimensions(outport_.getData()->getDimensions());
+        }
+    });
 }
 
 RasterizationRenderer::IllustrationSettings::IllustrationSettings()
@@ -164,9 +173,11 @@ void RasterizationRenderer::process() {
         }
 
         for (auto rasterization : rasterizations_) {
-            rasterization->rasterize(outport_.getDimensions(), [this, fragmentLists](Shader& sh) {
-                if (fragmentLists) this->flr_.setShaderUniforms(sh);
-            });
+            rasterization->rasterize(outport_.getDimensions(), mat4(1.0),
+                                     [this, fragmentLists](Shader& sh) {
+                                         utilgl::setUniforms(sh, camera_);
+                                         if (fragmentLists) this->flr_.setShaderUniforms(sh);
+                                     });
         }
 
         if (fragmentLists) {

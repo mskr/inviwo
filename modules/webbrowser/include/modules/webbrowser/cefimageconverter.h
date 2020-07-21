@@ -27,8 +27,7 @@
  *
  *********************************************************************************/
 
-#ifndef IVW_CEFIMAGECONVERTER_H
-#define IVW_CEFIMAGECONVERTER_H
+#pragma once
 
 #include <modules/webbrowser/webbrowsermoduledefine.h>
 #include <modules/webbrowser/renderhandlergl.h>
@@ -56,5 +55,3 @@ protected:
 };
 
 }  // namespace inviwo
-
-#endif  // IVW_WEBBROWSERCLIENT_H

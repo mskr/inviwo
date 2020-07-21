@@ -189,6 +189,14 @@ void CanvasProcessor::setProcessorWidget(std::unique_ptr<ProcessorWidget> proces
     isReady_.update();
 }
 
+void CanvasProcessor::accept(NetworkVisitor& visitor) {
+    if (visitor.visit(*this)) {
+        for (auto* elem : properties_) {
+            elem->accept(visitor);
+        }
+    }
+}
+
 void CanvasProcessor::onProcessorWidgetPositionChange(ProcessorWidgetMetaData*) {
     if (widgetMetaData_->getPosition() != position_.get()) {
         Property::OnChangeBlocker blocker{position_};
@@ -296,14 +304,18 @@ Canvas* CanvasProcessor::getCanvas() const {
 }
 
 void CanvasProcessor::process() {
-    if (auto c = getCanvas()) {
-        c->render(inport_.getData(), visibleLayer_, colorLayer_);
+    if (processorWidget_->isVisible()) {
+        if (auto c = getCanvas()) {
+            c->render(inport_.getData(), visibleLayer_, colorLayer_);
+        }
     }
 }
 
 void CanvasProcessor::doIfNotReady() {
-    if (auto c = getCanvas()) {
-        c->render(nullptr, visibleLayer_, colorLayer_);
+    if (processorWidget_->isVisible()) {
+        if (auto c = getCanvas()) {
+            c->render(nullptr, visibleLayer_, colorLayer_);
+        }
     }
 }
 

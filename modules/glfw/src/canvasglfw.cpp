@@ -40,6 +40,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <fmt/format.h>
+
 namespace inviwo {
 
 GLFWwindow* CanvasGLFW::sharedContext_ = nullptr;
@@ -51,7 +53,7 @@ GLFWwindow* CanvasGLFW::createWindow(const std::string& title, uvec2 dimensions)
     glfwWindowHint(GLFW_VISIBLE, GL_FALSE);
 
 #ifdef __APPLE__
-    if (!sharedContext_ && OpenGLCapabilities::getPreferredProfile() == "core") {
+    if (!sharedContext_) {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
         glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -216,33 +218,59 @@ void CanvasGLFW::provideExternalContext(GLFWwindow* sharedContext) {
 GLFWwindow* CanvasGLFW::sharedContext() { return sharedContext_; }
 
 ivec2 CanvasGLFW::movePointOntoDesktop(ivec2 pos, ivec2 size) {
-    int count;
-    GLFWmonitor** monitors = glfwGetMonitors(&count);
+    auto check_error = []() {
+        const char* description;
+        int code = glfwGetError(&description);
+        if (description) {
+            throw Exception(fmt::format("GLFW Error: {} {}", code, description));
+        }
+    };
 
-    for (int i = 0; i < count; ++i) {
-        GLFWmonitor* monitor = monitors[i];
-        ivec2 screenPos{};
-        ivec2 screenSize{};
-        glfwGetMonitorWorkarea(monitor, &screenPos.x, &screenPos.y, &screenSize.x, &screenSize.y);
+    try {
+        int count;
+        GLFWmonitor** monitors = glfwGetMonitors(&count);
+        check_error();
 
-        if (glm::all(glm::greaterThanEqual(pos, screenPos)) &&
-            glm::all(glm::lessThanEqual(pos, screenPos + screenSize))) {
+        for (int i = 0; i < count; ++i) {
+            if (GLFWmonitor* monitor = monitors[i]) {
+                ivec2 screenPos{};
+                ivec2 screenSize{};
+                glfwGetMonitorWorkarea(monitor, &screenPos.x, &screenPos.y, &screenSize.x,
+                                       &screenSize.y);
+                check_error();
 
+                if (glm::all(glm::greaterThanEqual(pos, screenPos)) &&
+                    glm::all(glm::lessThanEqual(pos, screenPos + screenSize))) {
+
+                    return pos;
+                }
+
+                if (glm::all(glm::greaterThanEqual(pos + size, screenPos)) &&
+                    glm::all(glm::lessThanEqual(pos + size, screenPos + screenSize))) {
+
+                    return glm::clamp(pos, screenPos, screenPos + screenSize);
+                }
+            }
+        }
+
+        if (auto monitor = glfwGetPrimaryMonitor()) {
+            check_error();
+            ivec2 screenPos{};
+            ivec2 screenSize{};
+            glfwGetMonitorWorkarea(monitor, &screenPos.x, &screenPos.y, &screenSize.x,
+                                   &screenSize.y);
+            check_error();
+            return glm::clamp(pos, screenPos, screenPos + screenSize);
+        } else {
             return pos;
         }
-
-        if (glm::all(glm::greaterThanEqual(pos + size, screenPos)) &&
-            glm::all(glm::lessThanEqual(pos + size, screenPos + screenSize))) {
-
-            return glm::clamp(pos, screenPos, screenPos + screenSize);
-        }
+    } catch (const Exception& e) {
+        LogErrorCustom("CanvasGLFW", e.getMessage());
+        return pos;
+    } catch (...) {
+        LogErrorCustom("CanvasGLFW", "MovePointOntoDestop unknown exception");
+        return pos;
     }
-
-    auto monitor = glfwGetPrimaryMonitor();
-    ivec2 screenPos{};
-    ivec2 screenSize{};
-    glfwGetMonitorWorkarea(monitor, &screenPos.x, &screenPos.y, &screenSize.x, &screenSize.y);
-    return glm::clamp(pos, screenPos, screenPos + screenSize);
 }
 
 }  // namespace inviwo

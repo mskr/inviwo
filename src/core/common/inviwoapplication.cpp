@@ -31,7 +31,7 @@
 #include <inviwo/core/common/inviwomodule.h>
 #include <inviwo/core/common/moduleaction.h>
 #include <inviwo/core/inviwocommondefines.h>
-#include <inviwo/core/datastructures/camerafactory.h>
+#include <inviwo/core/datastructures/camera/camerafactory.h>
 #include <inviwo/core/interaction/pickingmanager.h>
 #include <inviwo/core/io/datareaderfactory.h>
 #include <inviwo/core/io/datawriterfactory.h>
@@ -195,6 +195,7 @@ InviwoApplication::InviwoApplication(int argc, char** argv, std::string displayN
     workspaceManager_->registerFactory(getPropertyFactory());
     workspaceManager_->registerFactory(getInportFactory());
     workspaceManager_->registerFactory(getOutportFactory());
+    workspaceManager_->registerFactory(getCameraFactory());
 
     networkClearHandle_ = workspaceManager_->onClear([&]() {
         portInspectorManager_->clear();
@@ -286,7 +287,7 @@ const CommandLineParser& InviwoApplication::getCommandLineParser() const {
 CommandLineParser& InviwoApplication::getCommandLineParser() { return *commandLineParser_; }
 
 void InviwoApplication::printApplicationInfo() {
-    LogInfoCustom("InviwoInfo", "Inviwo Version: " << IVW_VERSION);
+    LogInfoCustom("InviwoInfo", "Inviwo Version: " << build::version);
     if (systemCapabilities_->getBuildInfo().year != 0) {
         LogInfoCustom("InviwoInfo",
                       "Build Date: " << systemCapabilities_->getBuildInfo().getDate());

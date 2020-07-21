@@ -62,7 +62,7 @@ public:
     virtual std::string getClassIdentifierForWidget() const override;
 
     virtual bool isCollapsed() const;
-    virtual void setCollapsed(bool value);
+    virtual CompositeProperty& setCollapsed(bool value);
 
     // Override original functions in Property
     virtual void setOwner(PropertyOwner* owner) override;
@@ -84,11 +84,18 @@ public:
     virtual const Processor* getProcessor() const override;
     virtual std::vector<std::string> getPath() const override;
 
+    /**
+     * @brief Accept a NetworkVisitor, the visitor will visit this and then each Property of the
+     * CompositeProperty in an undefined order. The Visitor will then visit each Properties's
+     * properties and so on.
+     */
+    virtual void accept(NetworkVisitor& visitor) override;
+
     virtual void serialize(Serializer& s) const override;
     virtual void deserialize(Deserializer& d) override;
 
 private:
-    bool collapsed_;
+    ValueWrapper<bool> collapsed_;
     InvalidationLevel subPropertyInvalidationLevel_;
 };
 

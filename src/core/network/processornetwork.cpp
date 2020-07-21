@@ -39,6 +39,7 @@
 #include <inviwo/core/network/processornetworkconverter.h>
 #include <inviwo/core/network/networklock.h>
 #include <inviwo/core/metadata/processormetadata.h>
+#include <inviwo/core/network/networkvisitor.h>
 
 #include <fmt/format.h>
 
@@ -89,10 +90,7 @@ bool ProcessorNetwork::addProcessor(Processor* processor) {
     return true;
 }
 
-void ProcessorNetwork::removeProcessor(Processor* processor) {
-    if (!processor) return;
-    NetworkLock lock(this);
-
+void ProcessorNetwork::removeProcessorHelper(Processor* processor) {
     // Remove all connections for this processor
     for (auto outport : processor->getOutports()) {
         std::vector<Inport*> inports = outport->getConnectedInports();
@@ -113,6 +111,13 @@ void ProcessorNetwork::removeProcessor(Processor* processor) {
     for (auto& link : toDelete) {
         removeLink(link.getSource(), link.getDestination());
     }
+}
+
+void ProcessorNetwork::removeProcessor(Processor* processor) {
+    if (!processor) return;
+    NetworkLock lock(this);
+
+    removeProcessorHelper(processor);
 
     // remove processor itself
     notifyObserversProcessorNetworkWillRemoveProcessor(processor);
@@ -126,8 +131,19 @@ void ProcessorNetwork::removeProcessor(Processor* processor) {
 
 void ProcessorNetwork::removeAndDeleteProcessor(Processor* processor) {
     if (!processor) return;
+    NetworkLock lock(this);
+
     RenderContext::getPtr()->activateDefaultRenderContext();
-    removeProcessor(processor);
+    removeProcessorHelper(processor);
+
+    // remove processor itself
+    notifyObserversProcessorNetworkWillRemoveProcessor(processor);
+    processors_.erase(util::stripIdentifier(processor->getIdentifier()));
+    removePropertyOwnerObservation(processor);
+    processor->setNetwork(nullptr);
+    processor->setProcessorWidget(nullptr);
+    notifyObserversProcessorNetworkDidRemoveProcessor(processor);
+
     delete processor;
 }
 
@@ -305,6 +321,12 @@ void ProcessorNetwork::clear() {
     }
 }
 
+void ProcessorNetwork::accept(NetworkVisitor& visitor) {
+    for (auto& p : processors_) {
+        p.second->accept(visitor);
+    }
+}
+
 bool ProcessorNetwork::isEmpty() const { return processors_.empty(); }
 
 bool ProcessorNetwork::isInvalidating() const { return !processorsInvalidating_.empty(); }
@@ -336,6 +358,16 @@ void ProcessorNetwork::onProcessorPortRemoved(Processor*, Port* port) {
     for (auto& item : toDelete) {
         removeConnection(item.getOutport(), item.getInport());
     }
+}
+
+void ProcessorNetwork::onProcessorStartBackgroundWork(Processor* p, size_t jobs) {
+    backgoundJobs_ += static_cast<int>(jobs);
+    notifyObserversProcessorBackgroundJobsChanged(p, static_cast<int>(jobs), backgoundJobs_);
+}
+
+void ProcessorNetwork::onProcessorFinishBackgroundWork(Processor* p, size_t jobs) {
+    backgoundJobs_ -= static_cast<int>(jobs);
+    notifyObserversProcessorBackgroundJobsChanged(p, -static_cast<int>(jobs), backgoundJobs_);
 }
 
 void ProcessorNetwork::onAboutPropertyChange(Property* modifiedProperty) {
@@ -376,7 +408,7 @@ void ProcessorNetwork::removePropertyOwnerObservation(PropertyOwner* po) {
 
 int ProcessorNetwork::getVersion() const { return processorNetworkVersion_; }
 
-const int ProcessorNetwork::processorNetworkVersion_ = 16;
+const int ProcessorNetwork::processorNetworkVersion_ = 17;
 
 void ProcessorNetwork::deserialize(Deserializer& d) {
     NetworkLock lock(this);
