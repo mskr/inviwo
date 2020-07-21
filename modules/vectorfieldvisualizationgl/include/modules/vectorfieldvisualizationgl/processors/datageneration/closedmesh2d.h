@@ -2,7 +2,7 @@
  *
  * Inviwo - Interactive Visualization Workshop
  *
- * Copyright (c) 2018-2020 Inviwo Foundation
+ * Copyright (c) 2015-2020 Inviwo Foundation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,68 +27,62 @@
  *
  *********************************************************************************/
 
-#ifndef IVW_SEEDPOINTGENERATOR2D_H
-#define IVW_SEEDPOINTGENERATOR2D_H
+#ifndef IVW_CLOSEDMESH2D_H
+#define IVW_CLOSEDMESH2D_H
 
-#include <modules/vectorfieldvisualization/vectorfieldvisualizationmoduledefine.h>
+#include <modules/vectorfieldvisualizationgl/vectorfieldvisualizationglmoduledefine.h>
 #include <inviwo/core/common/inviwo.h>
+
+#include <inviwo/core/ports/meshport.h>
 #include <inviwo/core/processors/processor.h>
 #include <inviwo/core/properties/ordinalproperty.h>
-#include <modules/vectorfieldvisualization/ports/seedpointsport.h>
-#include <inviwo/core/ports/imageport.h>
-#include <inviwo/core/properties/optionproperty.h>
+#include <inviwo/core/properties/stringproperty.h>
+#include <inviwo/core/properties/fileproperty.h>
+#include <inviwo/core/properties/stringproperty.h>
+#include <inviwo/core/properties/buttonproperty.h>
+#include <inviwo/core/properties/minmaxproperty.h>
 #include <inviwo/core/properties/compositeproperty.h>
-#include <inviwo/core/properties/boolproperty.h>
-#include <inviwo/core/properties/listproperty.h>
 
-#include <inviwo/core/properties/eventproperty.h>
-
-#include <random>
+#include <inviwo/core/datastructures/image/imageram.h>
+#include <inviwo/core/datastructures/image/layerramprecision.h>
+#include <inviwo/core/datastructures/spatialdata.h>
+#include <inviwo/core/util/spatialsampler.h>
+#include <modules/base/algorithm/meshutils.h>
 
 namespace inviwo {
 
-class IVW_MODULE_VECTORFIELDVISUALIZATION_API SeedPointGenerator2D : public Processor {
+using Index = size_t;
+
+struct EdgeRef {
+    Index a, b;
+    bool operator==(EdgeRef other) {
+        return (a == other.a && b == other.b) || (b == other.a && a == other.b);
+    }
+};
+
+struct TriangleEdgeRefs {
+    EdgeRef a, b, c;
+};
+
+class IVW_MODULE_VECTORFIELDVISUALIZATIONGL_API ClosedMesh2D : public Processor {
 public:
-    enum class Generator { Random, HaltonSequence, Pick };
-
-    SeedPointGenerator2D();
-    virtual ~SeedPointGenerator2D() = default;
-
-    virtual void process() override;
+    ClosedMesh2D();
+    virtual ~ClosedMesh2D();
 
     virtual const ProcessorInfo getProcessorInfo() const override;
     static const ProcessorInfo processorInfo_;
 
-private:
-    SeedPoints2DOutport seeds_;
+    virtual void initializeResources() override;
+    virtual void process() override;
 
-    TemplateOptionProperty<Generator> generator_;
+protected:
+    MeshInport in_;
+    MeshOutport out_;
 
-    IntSizeTProperty numPoints_;
-    IntSizeTProperty haltonXBase_;
-    IntSizeTProperty haltonYBase_;
-
-    CompositeProperty randomness_;
-    BoolProperty useSameSeed_;  ///< Use the same seed for each call to process.
-    IntProperty seed_;          ///<  The seed used to initialize the random sequence
-
-    EventProperty hoverEvents_;
-    EventProperty clickEvents_;
-    
-    FloatVec2Property seedMin_;
-    FloatVec2Property seedMax_;
-
-    FloatVec2Property pickedSeed_;
-
-    ListProperty savedSeeds_;
-
-    void processPickEvent(Event* e);
-
-private:
-    std::random_device rd_;
-    std::mt19937 mt_;
+    std::shared_ptr<Mesh> lineMeshFromVertexData(std::vector<vec3>& vertices,
+                                                 std::vector<vec3>& normals);
 };
 
 }  // namespace inviwo
 
-#endif  // IVW_SEEDPOINTGENERATOR2D_H
+#endif  // IVW_CLOSEDMESH2D_H

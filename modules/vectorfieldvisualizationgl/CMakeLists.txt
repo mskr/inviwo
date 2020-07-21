@@ -19,6 +19,10 @@ set(HEADER_FILES
     include/modules/vectorfieldvisualizationgl/processors/datageneration/vectorfieldgenerator2d.h
     include/modules/vectorfieldvisualizationgl/processors/datageneration/vectorfieldgenerator3d.h
     include/modules/vectorfieldvisualizationgl/processors/datageneration/vectorfieldgenerator4d.h
+    include/modules/vectorfieldvisualizationgl/processors/datageneration/ansysfieldreader2d.h
+    include/modules/vectorfieldvisualizationgl/processors/datageneration/ansysfieldreader3d.h
+    include/modules/vectorfieldvisualizationgl/processors/datageneration/closedmesh2d.h
+    include/modules/vectorfieldvisualizationgl/processors/datageneration/samplertest.h
     include/modules/vectorfieldvisualizationgl/vectorfieldvisualizationglmodule.h
     include/modules/vectorfieldvisualizationgl/vectorfieldvisualizationglmoduledefine.h
 )
@@ -41,6 +45,10 @@ set(SOURCE_FILES
     src/processors/datageneration/vectorfieldgenerator2d.cpp
     src/processors/datageneration/vectorfieldgenerator3d.cpp
     src/processors/datageneration/vectorfieldgenerator4d.cpp
+    src/processors/datageneration/ansysfieldreader2d.cpp
+    src/processors/datageneration/ansysfieldreader3d.cpp
+    src/processors/datageneration/closedmesh2d.cpp
+    src/processors/datageneration/samplertest.cpp
     src/vectorfieldvisualizationglmodule.cpp
 )
 ivw_group("Source Files" ${SOURCE_FILES})
@@ -65,6 +73,7 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/vectorfieldgenerator2d.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/vectorfieldgenerator3d.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/vectorfieldgenerator4d.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/pointcloudtoimage.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/tmip.frag
 )
 ivw_group("Shader Files" ${SHADER_FILES})

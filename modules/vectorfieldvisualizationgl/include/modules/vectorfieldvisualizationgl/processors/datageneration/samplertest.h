@@ -27,86 +27,64 @@
  *
  *********************************************************************************/
 
-#ifndef IVW_SEEDPOINTGENERATOR_H
-#define IVW_SEEDPOINTGENERATOR_H
+#ifndef IVW_SAMPLERTEST_H
+#define IVW_SAMPLERTEST_H
 
-#include <modules/vectorfieldvisualization/vectorfieldvisualizationmoduledefine.h>
+#include <modules/vectorfieldvisualizationgl/vectorfieldvisualizationglmoduledefine.h>
 #include <inviwo/core/common/inviwo.h>
+
+#include <inviwo/core/ports/meshport.h>
 #include <inviwo/core/processors/processor.h>
 
-#include <inviwo/core/util/timer.h>
-#include <inviwo/core/properties/boolproperty.h>
-#include <inviwo/core/properties/compositeproperty.h>
-#include <inviwo/core/properties/ordinalproperty.h>
-#include <inviwo/core/properties/eventproperty.h>
-#include <inviwo/core/ports/dataoutport.h>
-#include <inviwo/core/properties/minmaxproperty.h>
-#include <inviwo/core/properties/optionproperty.h>
-
+#include <inviwo/core/ports/datainport.h>
+#include <inviwo/core/ports/imageport.h>
 #include <modules/vectorfieldvisualization/ports/seedpointsport.h>
 
-#include <random>
+#include <inviwo/core/properties/ordinalproperty.h>
+#include <inviwo/core/properties/stringproperty.h>
+#include <inviwo/core/properties/fileproperty.h>
+#include <inviwo/core/properties/stringproperty.h>
+#include <inviwo/core/properties/buttonproperty.h>
+#include <inviwo/core/properties/minmaxproperty.h>
+#include <inviwo/core/properties/compositeproperty.h>
+#include <inviwo/core/properties/eventproperty.h>
+#include <inviwo/core/properties/cameraproperty.h>
+
+#include <inviwo/core/datastructures/spatialdata.h>
+#include <inviwo/core/util/spatialsampler.h>
 
 namespace inviwo {
 
-class IVW_MODULE_VECTORFIELDVISUALIZATION_API SeedPointGenerator : public Processor {
+class IVW_MODULE_VECTORFIELDVISUALIZATIONGL_API SamplerTest : public Processor {
 public:
+    SamplerTest();
+    virtual ~SamplerTest();
+
     virtual const ProcessorInfo getProcessorInfo() const override;
     static const ProcessorInfo processorInfo_;
-    SeedPointGenerator();
-    virtual ~SeedPointGenerator() = default;
 
+    virtual void initializeResources() override;
     virtual void process() override;
 
-    void onGeneratorChange();
+protected:
 
-private:
-    SeedPoints3DOutport seedPoints_;
+    DataInport<SpatialSampler<2, 2, double>> a_;
+    DataInport<SpatialSampler<2, 2, double>> b_;
+    ImageOutport image_;
+    SeedPoints2DOutport seeds_;
+    MeshOutport markers_;
 
-    CompositeProperty lineGroup_;
-    CompositeProperty planeGroup_;
-    CompositeProperty sphereGroup_;
+    FloatMinMaxProperty thresholds_;
+    FloatProperty step_;
+    IntProperty maxSize_;
+    FloatProperty realStep_;
+    FloatVec2Property min_;
+    FloatVec2Property max_;
+    FloatProperty minVelMag_;
+    FloatProperty maxVelMag_;
 
-    IntProperty numberOfPoints_;
-
-    IntVec2Property planeResolution_;
-    FloatVec3Property planeOrigin_;
-    FloatVec3Property planeE1_;
-    FloatVec3Property planeE2_;
-
-    FloatVec3Property sphereCenter_;
-    FloatMinMaxProperty sphereRadius_;
-
-    FloatVec3Property lineStart_;
-    FloatVec3Property lineEnd_;
-
-    OptionPropertyInt generator_;
-
-    CompositeProperty randomness_;
-    BoolProperty useSameSeed_;
-    IntProperty seed_;
-
-    void randomPoints();
-    void planePoints();
-    void linePoints();
-    void spherePoints();
-
-    std::random_device rd_;
-    std::mt19937 mt_;
-    
-
-    CompositeProperty interactive_;
-    EventProperty hoverEvents_;
-    EventProperty clickEvents_;
-    
-    FloatVec3Property seedMin_;
-    FloatVec3Property seedMax_;
-
-    FloatVec3Property pickedSeed_;
-
-    void processPickEvent(Event* e);
 };
 
 }  // namespace inviwo
 
-#endif  // IVW_SEEDPOINTGENERATOR_H
+#endif  // IVW_SAMPLERTEST_H

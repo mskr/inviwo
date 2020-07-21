@@ -36,6 +36,10 @@
 #include <modules/vectorfieldvisualizationgl/processors/datageneration/vectorfieldgenerator2d.h>
 #include <modules/vectorfieldvisualizationgl/processors/datageneration/vectorfieldgenerator3d.h>
 #include <modules/vectorfieldvisualizationgl/processors/datageneration/vectorfieldgenerator4d.h>
+#include <modules/vectorfieldvisualizationgl/processors/datageneration/ansysfieldreader2d.h>
+#include <modules/vectorfieldvisualizationgl/processors/datageneration/ansysfieldreader3d.h>
+#include <modules/vectorfieldvisualizationgl/processors/datageneration/closedmesh2d.h>
+#include <modules/vectorfieldvisualizationgl/processors/datageneration/samplertest.h>
 #include <modules/vectorfieldvisualizationgl/processors/2d/lic2d.h>
 #include <modules/vectorfieldvisualizationgl/processors/2d/hedgehog2d.h>
 #include <modules/vectorfieldvisualizationgl/processors/2d/vector2dmagnitude.h>
@@ -75,6 +79,11 @@ VectorFieldVisualizationGLModule::VectorFieldVisualizationGLModule(InviwoApplica
     registerProcessor<Vector3DDivergence>();
     registerProcessor<TMIP>();
     registerProcessor<VectorFieldGenerator4D>();
+
+    registerProcessor<AnsysFieldReader2D>();
+    registerProcessor<AnsysFieldReader3D>();
+    registerProcessor<ClosedMesh2D>();
+    registerProcessor<SamplerTest>();
 
     auto& gl = app->getModuleByType<OpenGLModule>()->getOpenGLCapabilities();
     if (gl.isComputeShadersSupported()) {

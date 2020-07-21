@@ -30,6 +30,7 @@
 #include <modules/vectorfieldvisualization/processors/2d/seedpointgenerator2d.h>
 #include <inviwo/core/util/zip.h>
 #include <modules/base/algorithm/randomutils.h>
+#include <inviwo/core/interaction/events/mouseevent.h>
 
 namespace inviwo {
 
@@ -49,7 +50,8 @@ SeedPointGenerator2D::SeedPointGenerator2D()
 
     , generator_("generator", "Generator",
                  {{"random", "Random", Generator::Random},
-                  {"haltonSequence", "Halton Sequence", Generator::HaltonSequence}})
+                  {"haltonSequence", "Halton Sequence", Generator::HaltonSequence},
+                  {"pick", "Pick", Generator::Pick}})
 
     , numPoints_("numPoints", "Number of points", 100, 1, 1000)
     , haltonXBase_("haltonXBase", "Base for x values", 2, 2, 32)
@@ -58,6 +60,19 @@ SeedPointGenerator2D::SeedPointGenerator2D()
     , randomness_("randomness", "Randomness")
     , useSameSeed_("useSameSeed", "Use same seed", true)
     , seed_("seed", "Seed", 1, 0, 1000)
+    , hoverEvents_(
+          "hoverEvents", "Hover Events", [this](Event* e) { processPickEvent(e); },
+          MouseButton::None, MouseState::Move)
+    , clickEvents_(
+          "clickEvents", "Click Events", [this](Event* e) { processPickEvent(e); },
+          MouseButton::Left, MouseState::Press)
+    , seedMin_("seedMin", "Seed Min", vec2(0), vec2(-1000), vec2(1000))
+    , seedMax_("seedMax", "Seed Max", vec2(1), vec2(-1000), vec2(1000))
+    , pickedSeed_("pickedSeed", "Seed", vec2(0), seedMin_.get(), seedMax_.get())
+    , savedSeeds_("savedSeeds", "Saved Seeds",
+                  std::make_unique<FloatVec2Property>("point", "Point", vec2(0), seedMin_.get(),
+                                                      seedMax_.get()),
+                  100)
     , rd_()
     , mt_(rd_())
 
@@ -71,6 +86,8 @@ SeedPointGenerator2D::SeedPointGenerator2D()
     addProperty(randomness_);
     randomness_.addProperty(useSameSeed_);
     randomness_.addProperty(seed_);
+    addProperties(hoverEvents_, clickEvents_, seedMin_, seedMax_, pickedSeed_, savedSeeds_);
+
     useSameSeed_.onChange([&]() { seed_.setVisible(useSameSeed_.get()); });
 
     auto typeOnChange = [&]() {
@@ -78,17 +95,32 @@ SeedPointGenerator2D::SeedPointGenerator2D()
         haltonYBase_.setVisible(generator_.getSelectedValue() == Generator::HaltonSequence);
 
         randomness_.setVisible(generator_.getSelectedValue() == Generator::Random);
+
+        haltonXBase_.setVisible(generator_.getSelectedValue() != Generator::Pick);
+        haltonYBase_.setVisible(generator_.getSelectedValue() != Generator::Pick);
+        randomness_.setVisible(generator_.getSelectedValue() != Generator::Pick);
+        numPoints_.setVisible(generator_.getSelectedValue() != Generator::Pick);
+        useSameSeed_.setVisible(generator_.getSelectedValue() != Generator::Pick);
+
+        hoverEvents_.setVisible(generator_.getSelectedValue() == Generator::Pick);
+        clickEvents_.setVisible(generator_.getSelectedValue() == Generator::Pick);
+        seedMin_.setVisible(generator_.getSelectedValue() == Generator::Pick);
+        seedMax_.setVisible(generator_.getSelectedValue() == Generator::Pick);
+        pickedSeed_.setVisible(generator_.getSelectedValue() == Generator::Pick);
     };
 
     generator_.onChange(typeOnChange);
+
+    seedMin_.onChange([&]() { pickedSeed_.setMinValue(seedMin_.get()); });
+    seedMax_.onChange([&]() { pickedSeed_.setMaxValue(seedMax_.get()); });
 }
 
 void SeedPointGenerator2D::process() {
     auto seeds = std::make_shared<std::vector<vec2>>();
-    seeds->reserve(numPoints_.get());
 
     switch (generator_.get()) {
         case Generator::Random: {
+            seeds->reserve(numPoints_.get());
             std::uniform_real_distribution<float> dis(0, 1);
             seeds->resize(numPoints_.get());
             util::randomSequence<float>(reinterpret_cast<float*>(seeds->data()),
@@ -96,11 +128,22 @@ void SeedPointGenerator2D::process() {
             break;
         }
         case Generator::HaltonSequence: {
+            seeds->reserve(numPoints_.get());
             auto x = util::haltonSequence<float>(haltonXBase_.get(), numPoints_);
             auto y = util::haltonSequence<float>(haltonYBase_.get(), numPoints_);
             for (auto&& it : util::zip(x, y)) {
                 seeds->emplace_back(get<0>(it), get<1>(it));
             }
+            break;
+        }
+
+        case Generator::Pick: {
+            for (const auto s : savedSeeds_) {
+                if (auto seed = dynamic_cast<FloatVec2Property*>(s)) {
+                    seeds->push_back(seed->get());
+                }
+            }
+            seeds->push_back(pickedSeed_.get());
         }
 
         default:
@@ -108,6 +151,26 @@ void SeedPointGenerator2D::process() {
     }
 
     seeds_.setData(seeds);
+}
+
+void SeedPointGenerator2D::processPickEvent(Event* e) {
+    static int count = 0;
+
+    const auto mouseEvent = static_cast<MouseEvent*>(e);
+    const auto mousePos = vec2(mouseEvent->posNormalized());
+
+    auto val = seedMin_.get() + mousePos * (seedMax_.get() - seedMin_.get());
+
+    pickedSeed_.set(val);
+
+    if (mouseEvent->button() == MouseButton::Left) {
+        savedSeeds_.addProperty(new FloatVec2Property("point" + std::to_string(count++),
+                                                      "Point" + std::to_string(count), val,
+                                                      seedMin_.get(), seedMax_.get()),
+                                true);
+    }
+
+    process();
 }
 
 }  // namespace inviwo

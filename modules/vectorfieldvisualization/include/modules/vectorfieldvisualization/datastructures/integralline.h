@@ -98,6 +98,9 @@ public:
     TerminationReason getBackwardTerminationReason() const;
     TerminationReason getForwardTerminationReason() const;
 
+    std::string getName() const;
+    void setName(std::string name);
+
 private:
     double calcLength(std::vector<dvec3>::const_iterator start,
                       std::vector<dvec3>::const_iterator end) const;
@@ -111,6 +114,8 @@ private:
     mutable double length_ = -1;  // length is only calculated on demand hence it need to be mutable
 
     size_t idx_;
+
+    std::string name_;
 };
 
 template <typename T>

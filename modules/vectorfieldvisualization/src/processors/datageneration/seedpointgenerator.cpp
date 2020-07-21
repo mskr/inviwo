@@ -29,6 +29,7 @@
 
 #include <modules/vectorfieldvisualization/processors/datageneration/seedpointgenerator.h>
 #include <modules/base/algorithm/randomutils.h>
+#include <inviwo/core/interaction/events/mouseevent.h>
 
 #include <glm/gtx/vector_angle.hpp>
 #include <math.h>
@@ -37,6 +38,7 @@
 #define PLANE 2
 #define LINE 3
 #define SPHERE 4
+#define INTERACTIVE 5
 
 namespace inviwo {
 
@@ -71,13 +73,24 @@ SeedPointGenerator::SeedPointGenerator()
     , useSameSeed_("useSameSeed", "Use same seed", true)
     , seed_("seed", "Seed", 1, 0, 1000)
     , rd_()
-    , mt_(rd_()) {
+    , mt_(rd_())
+    , interactive_("interactive", "Interactive")
+    , hoverEvents_(
+          "hoverEvents", "Hover Events", [this](Event* e) { processPickEvent(e); },
+          MouseButton::None, MouseState::Move)
+    , clickEvents_(
+          "clickEvents", "Click Events", [this](Event* e) { processPickEvent(e); },
+          MouseButton::Left, MouseState::Press)
+    , seedMin_("seedMin", "Seed Min", vec3(0), vec3(-1000), vec3(1000))
+    , seedMax_("seedMax", "Seed Max", vec3(1), vec3(-1000), vec3(1000))
+    , pickedSeed_("pickedSeed", "Seed", vec3(0), seedMin_.get(), seedMax_.get()) {
     addPort(seedPoints_);
 
     generator_.addOption("random", "Random", RND);
     generator_.addOption("line", "Line", LINE);
     generator_.addOption("plane", "Plane", PLANE);
     generator_.addOption("sphere", "Sphere", SPHERE);
+    generator_.addOption("interactive", "Interactive", INTERACTIVE);
     generator_.setCurrentStateAsDefault();
     generator_.onChange([this]() { onGeneratorChange(); });
     addProperty(generator_);
@@ -105,7 +118,25 @@ SeedPointGenerator::SeedPointGenerator()
     randomness_.addProperty(seed_);
     useSameSeed_.onChange([&]() { seed_.setVisible(useSameSeed_.get()); });
 
+    addProperties(interactive_);
+    interactive_.addProperties(hoverEvents_, clickEvents_, seedMin_, seedMax_, pickedSeed_);
+
     onGeneratorChange();
+}
+
+void SeedPointGenerator::processPickEvent(Event* e) {
+
+    const auto mouseEvent = static_cast<MouseEvent*>(e);
+    auto mousePos = vec2(mouseEvent->posNormalized());
+
+    auto coords = seedMax_.get() - seedMin_.get();
+    auto z = seedMin_.get().z + coords.z / 2.f;
+
+    auto val = seedMin_.get() + vec3(mousePos, z) * coords;
+
+    pickedSeed_.set(val);
+
+    process();
 }
 
 void SeedPointGenerator::process() {
@@ -125,6 +156,9 @@ void SeedPointGenerator::process() {
             break;
         case SPHERE:
             spherePoints();
+            break;
+        case INTERACTIVE:
+            seedPoints_.setData(std::make_shared<std::vector<vec3>>(1, pickedSeed_.get()));
             break;
         default:
             LogWarn("No points generated since given type is not yet implemented");

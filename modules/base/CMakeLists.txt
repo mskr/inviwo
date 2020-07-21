@@ -190,6 +190,7 @@ set(SOURCE_FILES
     src/processors/imagesourceseries.cpp
     src/processors/imagestackvolumesource.cpp
     src/processors/imagetospatialsampler.cpp
+    src/processors/samplerfile.cpp
     src/processors/inputselector.cpp
     src/processors/layerdistancetransformram.cpp
     src/processors/meshclipping.cpp

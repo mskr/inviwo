@@ -22,6 +22,8 @@ set(HEADER_FILES
     include/modules/vectorfieldvisualization/processors/discardshortlines.h
     include/modules/vectorfieldvisualization/processors/integrallinetracerprocessor.h
     include/modules/vectorfieldvisualization/processors/integrallinevectortomesh.h
+    include/modules/vectorfieldvisualization/processors/integrallinecompare.h
+    include/modules/vectorfieldvisualization/processors/integrallineclustering.h
     include/modules/vectorfieldvisualization/processors/seed3dto4d.h
     include/modules/vectorfieldvisualization/processors/seedsfrommasksequence.h
     include/modules/vectorfieldvisualization/properties/integrallineproperties.h
@@ -49,6 +51,8 @@ set(SOURCE_FILES
     src/processors/datageneration/seedpointsfrommask.cpp
     src/processors/discardshortlines.cpp
     src/processors/integrallinevectortomesh.cpp
+    src/processors/integrallinecompare.cpp
+    src/processors/integrallineclustering.cpp
     src/processors/seed3dto4d.cpp
     src/processors/seedsfrommasksequence.cpp
     src/properties/integrallineproperties.cpp

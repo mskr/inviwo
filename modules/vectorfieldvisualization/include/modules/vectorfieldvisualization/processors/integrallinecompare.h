@@ -2,7 +2,7 @@
  *
  * Inviwo - Interactive Visualization Workshop
  *
- * Copyright (c) 2015-2020 Inviwo Foundation
+ * Copyright (c) 2016-2020 Inviwo Foundation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,86 +27,48 @@
  *
  *********************************************************************************/
 
-#ifndef IVW_SEEDPOINTGENERATOR_H
-#define IVW_SEEDPOINTGENERATOR_H
+#ifndef IVW_INTEGRALLINECOMPARE_H
+#define IVW_INTEGRALLINECOMPARE_H
 
 #include <modules/vectorfieldvisualization/vectorfieldvisualizationmoduledefine.h>
+
 #include <inviwo/core/common/inviwo.h>
 #include <inviwo/core/processors/processor.h>
-
-#include <inviwo/core/util/timer.h>
-#include <inviwo/core/properties/boolproperty.h>
-#include <inviwo/core/properties/compositeproperty.h>
-#include <inviwo/core/properties/ordinalproperty.h>
-#include <inviwo/core/properties/eventproperty.h>
 #include <inviwo/core/ports/dataoutport.h>
+
+#include <inviwo/core/properties/stringproperty.h>
+#include <inviwo/core/properties/ordinalproperty.h>
+
+#include <inviwo/core/properties/boolproperty.h>
+#include <inviwo/core/properties/boolcompositeproperty.h>
+#include <inviwo/core/properties/buttonproperty.h>
 #include <inviwo/core/properties/minmaxproperty.h>
 #include <inviwo/core/properties/optionproperty.h>
+#include <inviwo/core/properties/compositeproperty.h>
 
-#include <modules/vectorfieldvisualization/ports/seedpointsport.h>
-
-#include <random>
+#include <modules/vectorfieldvisualization/datastructures/integralline.h>
+#include <modules/vectorfieldvisualization/datastructures/integrallineset.h>
 
 namespace inviwo {
 
-class IVW_MODULE_VECTORFIELDVISUALIZATION_API SeedPointGenerator : public Processor {
+class IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLineCompare : public Processor {
 public:
-    virtual const ProcessorInfo getProcessorInfo() const override;
-    static const ProcessorInfo processorInfo_;
-    SeedPointGenerator();
-    virtual ~SeedPointGenerator() = default;
+
+    IntegralLineCompare();
+    virtual ~IntegralLineCompare() = default;
 
     virtual void process() override;
 
-    void onGeneratorChange();
+    virtual const ProcessorInfo getProcessorInfo() const override;
+    static const ProcessorInfo processorInfo_;
 
 private:
-    SeedPoints3DOutport seedPoints_;
-
-    CompositeProperty lineGroup_;
-    CompositeProperty planeGroup_;
-    CompositeProperty sphereGroup_;
-
-    IntProperty numberOfPoints_;
-
-    IntVec2Property planeResolution_;
-    FloatVec3Property planeOrigin_;
-    FloatVec3Property planeE1_;
-    FloatVec3Property planeE2_;
-
-    FloatVec3Property sphereCenter_;
-    FloatMinMaxProperty sphereRadius_;
-
-    FloatVec3Property lineStart_;
-    FloatVec3Property lineEnd_;
-
-    OptionPropertyInt generator_;
-
-    CompositeProperty randomness_;
-    BoolProperty useSameSeed_;
-    IntProperty seed_;
-
-    void randomPoints();
-    void planePoints();
-    void linePoints();
-    void spherePoints();
-
-    std::random_device rd_;
-    std::mt19937 mt_;
-    
-
-    CompositeProperty interactive_;
-    EventProperty hoverEvents_;
-    EventProperty clickEvents_;
-    
-    FloatVec3Property seedMin_;
-    FloatVec3Property seedMax_;
-
-    FloatVec3Property pickedSeed_;
-
-    void processPickEvent(Event* e);
+    IntegralLineSetInport lines1_;
+    IntegralLineSetInport lines2_;
+    IntegralLineSetOutport out_;
+    DataOutport<std::vector<vec4>> colors_;
 };
 
 }  // namespace inviwo
 
-#endif  // IVW_SEEDPOINTGENERATOR_H
+#endif  // IVW_INTEGRALLINECOMPARE_H

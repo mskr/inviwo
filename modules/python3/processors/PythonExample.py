@@ -2,16 +2,19 @@
 
 import inviwopy as ivw
 
+import numpy
+
 class PythonExample(ivw.Processor):
     def __init__(self, id, name):
         ivw.Processor.__init__(self, id, name)
-        self.inport = ivw.data.VolumeInport("inport")
-        self.addInport(self.inport)
-        self.outport = ivw.data.VolumeOutport("outport")
+        self.outport = ivw.data.MeshOutport("outport")
         self.addOutport(self.outport)
 
         self.slider = ivw.properties.IntProperty("slider", "slider", 0, 0, 100, 1)
         self.addProperty(self.slider)
+
+        self.file = ivw.properties.FileProperty("filename", "Volume file", "", "volume")
+        self.addProperty(self.file)
 
     @staticmethod
     def processorInfo():
@@ -31,4 +34,13 @@ class PythonExample(ivw.Processor):
 
     def process(self):
         print("process: ", self.slider.value)
-        self.outport.setData(self.inport.getData())
+
+        mesh = ivw.data.Mesh()
+        mesh.addBuffer(ivw.data.BufferType.PositionAttrib, ivw.data.Buffer(
+            numpy.array([0,0,0]).astype(numpy.float32)))
+        mesh.addBuffer(ivw.data.BufferType.RadiiAttrib, ivw.data.Buffer(
+            numpy.array([100]).astype(numpy.float32)))
+        mesh.addBuffer(ivw.data.BufferType.ColorAttrib, ivw.data.Buffer(
+            numpy.array([1,1,1,1]).astype(numpy.float32)))
+
+        self.outport.setData(mesh)

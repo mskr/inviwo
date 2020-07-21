@@ -37,6 +37,8 @@
 #include <modules/vectorfieldvisualization/processors/3d/pathlines.h>
 #include <modules/vectorfieldvisualization/processors/3d/streamribbons.h>
 #include <modules/vectorfieldvisualization/processors/integrallinevectortomesh.h>
+#include <modules/vectorfieldvisualization/processors/integrallinecompare.h>
+#include <modules/vectorfieldvisualization/processors/integrallineclustering.h>
 
 #include <modules/vectorfieldvisualization/ports/seedpointsport.h>
 
@@ -80,6 +82,8 @@ VectorFieldVisualizationModule::VectorFieldVisualizationModule(InviwoApplication
     registerProcessor<StreamRibbonsDeprecated>();
 
     registerProcessor<IntegralLineVectorToMesh>();
+    registerProcessor<IntegralLineCompare>();
+    registerProcessor<IntegralLineClustering>();
     registerProcessor<Seed3Dto4D>();
     registerProcessor<StreamLines2D>();
     registerProcessor<StreamLines3D>();

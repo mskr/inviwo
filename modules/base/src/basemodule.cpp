@@ -91,6 +91,7 @@
 #include <modules/base/processors/worldtransformdeprecated.h>
 #include <modules/base/processors/camerafrustum.h>
 #include <modules/base/processors/imagetospatialsampler.h>
+#include <modules/base/processors/samplerfile.h>
 #include <modules/base/processors/volumesequencesingletimestepsampler.h>
 
 // Properties
@@ -195,6 +196,7 @@ BaseModule::BaseModule(InviwoApplication* app) : InviwoModule(app, "Base") {
     registerProcessor<NoiseVolumeProcessor>();
     registerProcessor<BufferToMeshProcessor>();
     registerProcessor<ImageToSpatialSampler>();
+    registerProcessor<SamplerFile>();
     registerProcessor<CameraFrustum>();
     registerProcessor<VolumeSequenceSingleTimestepSamplerProcessor>();
     registerProcessor<VolumeCreator>();

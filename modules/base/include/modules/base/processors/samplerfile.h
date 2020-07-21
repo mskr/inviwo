@@ -2,7 +2,7 @@
  *
  * Inviwo - Interactive Visualization Workshop
  *
- * Copyright (c) 2018-2020 Inviwo Foundation
+ * Copyright (c) 2017-2020 Inviwo Foundation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,32 +27,39 @@
  *
  *********************************************************************************/
 
-#ifndef IVW_SEEDPOINTGENERATOR2D_H
-#define IVW_SEEDPOINTGENERATOR2D_H
+#ifndef IVW_SAMPLERFILE_H
+#define IVW_SAMPLERFILE_H
 
-#include <modules/vectorfieldvisualization/vectorfieldvisualizationmoduledefine.h>
+#include <modules/base/basemoduledefine.h>
 #include <inviwo/core/common/inviwo.h>
 #include <inviwo/core/processors/processor.h>
 #include <inviwo/core/properties/ordinalproperty.h>
-#include <modules/vectorfieldvisualization/ports/seedpointsport.h>
 #include <inviwo/core/ports/imageport.h>
-#include <inviwo/core/properties/optionproperty.h>
-#include <inviwo/core/properties/compositeproperty.h>
-#include <inviwo/core/properties/boolproperty.h>
-#include <inviwo/core/properties/listproperty.h>
-
-#include <inviwo/core/properties/eventproperty.h>
-
-#include <random>
+#include <inviwo/core/util/spatialsampler.h>
+#include <inviwo/core/properties/fileproperty.h>
+#include <inviwo/core/properties/stringproperty.h>
+#include <inviwo/core/properties/buttonproperty.h>
 
 namespace inviwo {
 
-class IVW_MODULE_VECTORFIELDVISUALIZATION_API SeedPointGenerator2D : public Processor {
-public:
-    enum class Generator { Random, HaltonSequence, Pick };
+/** \docpage{org.inviwo.ImageToSpatialSampler, Image To Spatial Sampler}
+ * ![](org.inviwo.ImageToSpatialSampler.png?classIdentifier=org.inviwo.ImageToSpatialSampler)
+ *
+ * Creates a Spatial Sampler for the given input image.
+ *
+ *
+ * ### Inports
+ *   * __image__ The input image.
+ *
+ * ### Outports
+ *   * __sampler__ The created sampler.
+ *
+ */
 
-    SeedPointGenerator2D();
-    virtual ~SeedPointGenerator2D() = default;
+class IVW_MODULE_BASE_API SamplerFile : public Processor {
+public:
+    SamplerFile();
+    virtual ~SamplerFile() = default;
 
     virtual void process() override;
 
@@ -60,35 +67,13 @@ public:
     static const ProcessorInfo processorInfo_;
 
 private:
-    SeedPoints2DOutport seeds_;
+    DataOutport<SpatialSampler<2, 2, double>> sampler_;
 
-    TemplateOptionProperty<Generator> generator_;
-
-    IntSizeTProperty numPoints_;
-    IntSizeTProperty haltonXBase_;
-    IntSizeTProperty haltonYBase_;
-
-    CompositeProperty randomness_;
-    BoolProperty useSameSeed_;  ///< Use the same seed for each call to process.
-    IntProperty seed_;          ///<  The seed used to initialize the random sequence
-
-    EventProperty hoverEvents_;
-    EventProperty clickEvents_;
-    
-    FloatVec2Property seedMin_;
-    FloatVec2Property seedMax_;
-
-    FloatVec2Property pickedSeed_;
-
-    ListProperty savedSeeds_;
-
-    void processPickEvent(Event* e);
-
-private:
-    std::random_device rd_;
-    std::mt19937 mt_;
+    FileProperty file_;
+    StringProperty quantity_;
+    ButtonProperty readButton_;
 };
 
 }  // namespace inviwo
 
-#endif  // IVW_SEEDPOINTGENERATOR2D_H
+#endif  // IVW_IMAGETOSPATIALSAMPLER_H
