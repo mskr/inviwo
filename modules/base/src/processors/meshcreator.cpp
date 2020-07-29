@@ -89,6 +89,10 @@ MeshCreator::MeshCreator()
     meshType_.addOption("coordaxes", "Coordinate Indicator", MeshType::CoordAxes);
     meshType_.addOption("torus", "Torus", MeshType::Torus);
     meshType_.addOption("sphereopt", "Sphere with Position", MeshType::SphereOpt);
+    meshType_.addOption("radiustube", "Tube with Radius", MeshType::RadiusTube);
+    meshType_.addOption("radiustube", "Polytube with Radius", MeshType::RadiusPolyTube);
+    meshType_.addOption("radiustube", "Angled Polytube with Radius",
+                        MeshType::RadiusPolyTubeAngled);
 
     util::hide(position1_, position2_, normal_, basis_, color_, torusRadius1_, torusRadius2_);
     util::show(meshScale_, meshRes_);
@@ -202,6 +206,21 @@ MeshCreator::MeshCreator()
                 util::show(position1_, meshScale_, color_);
                 break;
             }
+            case MeshType::RadiusTube: {
+                pickingUpdate_ = updatePosition1and2;
+                util::show(position1_, position2_, torusRadius1_, torusRadius2_);
+                break;
+            }
+            case MeshType::RadiusPolyTube: {
+                pickingUpdate_ = updatePosition1and2;
+                util::show(position1_, position2_, torusRadius1_, torusRadius2_);
+                break;
+            }
+            case MeshType::RadiusPolyTubeAngled: {
+                pickingUpdate_ = updatePosition1and2;
+                util::show(position1_, position2_, torusRadius1_, torusRadius2_);
+                break;
+            }
             default: {
                 pickingUpdate_ = updateNone;
                 util::show(meshScale_, meshRes_);
@@ -230,6 +249,32 @@ MeshCreator::MeshCreator()
 MeshCreator::~MeshCreator() {}
 
 std::shared_ptr<Mesh> MeshCreator::createMesh() {
+    using MyLineMesh = TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
+                                 buffertraits::ColorsBuffer>;
+    auto radiustube = std::make_shared<MyLineMesh>();
+    auto ib = radiustube->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    ib->add(radiustube->addVertex(position1_, torusRadius1_, vec4(0, 1, 0, 1)));
+    ib->add(radiustube->addVertex(position1_, torusRadius1_, vec4(0, 1, 0, 1)));
+    ib->add(radiustube->addVertex(position2_, torusRadius2_, vec4(0, 0, 1, 1)));
+    ib->add(radiustube->addVertex(position2_, torusRadius2_, vec4(0, 0, 1, 1)));
+    auto dir = position2_.get() - position1_.get();
+    auto radiuspolytube = std::make_shared<MyLineMesh>();
+    auto ib2 = radiuspolytube->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    ib2->add(radiuspolytube->addVertex(position1_, torusRadius1_, vec4(0, 1, 0, 1)));
+    ib2->add(radiuspolytube->addVertex(position1_, torusRadius1_, vec4(0, 1, 0, 1)));
+    ib2->add(radiuspolytube->addVertex(position2_, torusRadius2_, vec4(0, 0, 1, 1)));
+    ib2->add(radiuspolytube->addVertex(position2_.get() + dir, torusRadius1_, vec4(1, 0, 0, 1)));
+    ib2->add(radiuspolytube->addVertex(position2_.get() + dir, torusRadius1_, vec4(1, 0, 0, 1)));
+    auto radiuspolytubeAngled = std::make_shared<MyLineMesh>();
+    auto ib3 =
+        radiuspolytubeAngled->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    ib3->add(radiuspolytubeAngled->addVertex(position1_, torusRadius1_, vec4(0, 1, 0, 1)));
+    ib3->add(radiuspolytubeAngled->addVertex(position1_, torusRadius1_, vec4(0, 1, 0, 1)));
+    ib3->add(radiuspolytubeAngled->addVertex(position2_, torusRadius2_, vec4(0, 0, 1, 1)));
+    ib3->add(radiuspolytubeAngled->addVertex(position2_.get() + vec3(.5f), torusRadius1_,
+                                             vec4(1, 0, 0, 1)));
+    ib3->add(radiuspolytubeAngled->addVertex(position2_.get() + vec3(.5f), torusRadius1_,
+                                             vec4(1, 0, 0, 1)));
     switch (meshType_.get()) {
         case MeshType::Sphere:
             return SimpleMeshCreator::sphere(0.5f * meshScale_.get(), meshRes_.get().y,
@@ -280,6 +325,12 @@ std::shared_ptr<Mesh> MeshCreator::createMesh() {
                                    meshRes_, color_);
         case MeshType::SphereOpt:
             return meshutil::sphere(position1_, meshScale_, color_);
+        case MeshType::RadiusTube:
+            return radiustube;
+        case MeshType::RadiusPolyTube:
+            return radiuspolytube;
+        case MeshType::RadiusPolyTubeAngled:
+            return radiuspolytubeAngled;
         default:
             return SimpleMeshCreator::sphere(0.1f, meshRes_.get().x, meshRes_.get().y);
     }

@@ -38,10 +38,8 @@
 
 #include <inviwo/core/common/inviwo.h>
 #include <inviwo/core/processors/processor.h>
-#include <inviwo/core/interaction/cameratrackball.h>
 #include <inviwo/core/ports/meshport.h>
 #include <inviwo/core/ports/imageport.h>
-#include <inviwo/core/properties/cameraproperty.h>
 #include <inviwo/core/properties/ordinalproperty.h>
 #include <inviwo/core/properties/compositeproperty.h>
 #include <inviwo/core/properties/simplelightingproperty.h>
@@ -96,6 +94,7 @@ private:
     void configureAllShaders();
     void configureShader(Shader& shader);
     void setUniforms(Shader& shader) const;
+    void configureTubeShader(Shader& shader);
 
     MeshFlatMultiInport inport_;
     RasterizationOutport outport_;
@@ -109,6 +108,13 @@ private:
 
     TransformListProperty transformSetting_;
     std::shared_ptr<MeshShaderCache> lineShaders_;
+
+    BoolProperty tubes_;
+    SimpleLightingProperty lighting_;
+    std::vector<std::pair<ShaderType, std::string>> shaderItems_;
+    std::vector<MeshShaderCache::Requirement> shaderRequirements_;
+    std::shared_ptr<MeshShaderCache> adjacencyShaders_;
+    std::shared_ptr<MeshShaderCache> shaders_;
 };
 
 /**
@@ -132,6 +138,33 @@ protected:
     std::vector<std::shared_ptr<const Mesh>> meshes_;
 
     const bool forceOpaque_;
+};
+
+/**
+ * \brief Functor object that will render tubes into a fragment list.
+ */
+class IVW_MODULE_MESHRENDERINGGL_API TubeRasterization : public Rasterization {
+public:
+    /**
+     * \brief Copy all settings and the shader to hand to a renderer.
+     */
+    TubeRasterization(std::shared_ptr<MeshShaderCache> tubeShaders,
+                      std::shared_ptr<MeshShaderCache> tubeShadersAdjacency,
+                      std::vector<std::shared_ptr<const Mesh>> meshes,
+                      std::shared_ptr<SimpleLightingProperty> lighting, bool forceOpaque);
+    virtual void rasterize(const ivec2& imageSize, const mat4& worldMatrixTransform,
+                           std::function<void(Shader&)> setUniforms) const override;
+    virtual bool usesFragmentLists() const override;
+    virtual Document getInfo() const override;
+    virtual Rasterization* clone() const override;
+
+protected:
+    std::shared_ptr<MeshShaderCache> tubeShaders_;
+    std::shared_ptr<MeshShaderCache> tubeShadersAdjacency_;
+
+    std::vector<std::shared_ptr<const Mesh>> meshes_;
+    std::shared_ptr<SimpleLightingProperty> lighting_;
+    bool forceOpaque_;
 };
 
 }  // namespace inviwo

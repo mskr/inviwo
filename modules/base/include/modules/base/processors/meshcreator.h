@@ -106,7 +106,10 @@ private:
         Arrow,
         CoordAxes,
         Torus,
-        SphereOpt
+        SphereOpt,
+        RadiusTube,
+        RadiusPolyTube,
+        RadiusPolyTubeAngled
     };
 
     void handlePicking(PickingEvent*);

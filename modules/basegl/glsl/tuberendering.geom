@@ -56,10 +56,11 @@ flat in uint pickID_[SIZE];
 out vec4 color_;
 flat out vec4 pickColor_;
 out vec3 worldPos_;
-out vec3 startPos_;
-out vec3 endPos_;
-out vec3 gEndplanes[2];
-out float radius_;
+flat out vec3 startPos_;
+flat out vec3 endPos_;
+flat out vec3 gEndplanes[2];
+out float radius0_;
+out float radius1_;
 
 vec3 prismoid[8];
 vec4 color[2];
@@ -78,7 +79,8 @@ void emitVertex(int a) {
     endPos_ = endPos;
     gEndplanes[0] = capNormals[0];
     gEndplanes[1] = capNormals[1];
-    radius_ = radius[a <= 3 ? 0 : 1];
+    radius0_ = radius[0];
+    radius1_ = radius[1];
     EmitVertex();
 }
 
@@ -143,16 +145,16 @@ void main() {
     vec3 radialDir = findOrthogonalVector(tubeDir);
 
     // Compute cap face 1 of 2:
-    vec3 k = radius[0] * normalize(cross(radialDir, capNormals[0])); 
-    vec3 i = radius[0] * normalize(cross(k, capNormals[0])); 
+    vec3 k = 2. * radius[0] * normalize(cross(radialDir, capNormals[0])); 
+    vec3 i = 2. * radius[0] * normalize(cross(k, capNormals[0])); 
     prismoid[0] = startPos + i + k;
     prismoid[1] = startPos + i - k;
     prismoid[2] = startPos - i - k;
     prismoid[3] = startPos - i + k;
 
     // Compute cap face 2 of 2:
-    k = radius[1] * normalize(cross(radialDir, capNormals[1])); 
-    i = radius[1] * normalize(cross(k, capNormals[1])); 
+    k = 2. * radius[1] * normalize(cross(radialDir, capNormals[1])); 
+    i = 2. * radius[1] * normalize(cross(k, capNormals[1])); 
     prismoid[4] = endPos + i + k;
     prismoid[5] = endPos + i - k;
     prismoid[6] = endPos - i - k;

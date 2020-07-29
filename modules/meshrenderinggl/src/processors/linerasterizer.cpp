@@ -86,13 +86,39 @@ LineRasterizer::LineRasterizer()
                 shader[ShaderType::Geometry]->addShaderDefine("ENABLE_ADJACENCY", toString(mode));
                 invalidate(InvalidationLevel::InvalidResources);
             }}},
-          [this](Shader& shader) -> void { invalidate(InvalidationLevel::InvalidResources); })) {
+          [this](Shader& shader) -> void { invalidate(InvalidationLevel::InvalidResources); }))
+    , tubes_("tubes", "Tubes")
+    , lighting_("lighting", "Lighting")
+    , shaderItems_{{{ShaderType::Vertex, "tuberendering.vert"},
+                    {ShaderType::Geometry, "tuberendering.geom"},
+                    {ShaderType::Fragment, "tuberendering.frag"}}}
+    , shaderRequirements_{{{BufferType::PositionAttrib, MeshShaderCache::Mandatory, "vec3"},
+                           {BufferType::ColorAttrib, MeshShaderCache::Optional, "vec4"},
+                           {BufferType::RadiiAttrib, MeshShaderCache::Optional, "float"},
+                           {BufferType::PickingAttrib, MeshShaderCache::Optional, "uint"},
+                           {BufferType::ScalarMetaAttrib, MeshShaderCache::Optional, "float"}}}
+    , adjacencyShaders_(new MeshShaderCache(shaderItems_, shaderRequirements_,
+                                            [&](Shader& shader) -> void {
+                                                shader.onReload([this]() {
+                                                    invalidate(InvalidationLevel::InvalidResources);
+                                                });
+                                                configureTubeShader(shader);
+                                                for (auto& obj : shader.getShaderObjects()) {
+                                                    obj.addShaderDefine("HAS_ADJACENCY");
+                                                }
+                                            }))
+    , shaders_(new MeshShaderCache(shaderItems_, shaderRequirements_, [&](Shader& shader) -> void {
+        shader.onReload([this]() { invalidate(InvalidationLevel::InvalidResources); });
+        configureTubeShader(shader);
+    })) {
 
     addPort(inport_);
     addPort(outport_);
 
     addProperties(transformSetting_, forceOpaque_, lineSettings_, overwriteColor_, constantColor_,
                   useUniformAlpha_, uniformAlpha_);
+
+    addProperties(tubes_, lighting_);
 
     transformSetting_.setCollapsed(true);
     transformSetting_.setCurrentStateAsDefault();
@@ -117,27 +143,44 @@ void LineRasterizer::initializeResources() {
         Shader& shader = shaderPair.second;
         configureShader(shader);
     }
+
+    for (auto& shader : adjacencyShaders_->getShaders()) {
+        configureTubeShader(shader.second);
+    }
+    for (auto& shader : shaders_->getShaders()) {
+        configureTubeShader(shader.second);
+    }
 }
 
 void LineRasterizer::process() {
+
     if (!inport_.hasData()) return;
-    for (auto& shaderPair : lineShaders_->getShaders()) {
-        Shader& shader = shaderPair.second;
-        if (!shader.isReady()) configureShader(shader);
 
-        shader.activate();
-        setUniforms(shader);
-        shader.deactivate();
-    }
-
-    std::shared_ptr<const Rasterization> rasterization = std::make_shared<LineRasterization>(*this);
-
-    // If transform is applied, wrap rasterization.
-    if (transformSetting_.transforms_.size() > 0) {
-        outport_.setData(std::make_shared<TransformedRasterization>(rasterization,
-                                                                    transformSetting_.getMatrix()));
+    if (tubes_) {
+        outport_.setData(std::make_shared<TubeRasterization>(
+            shaders_, adjacencyShaders_, inport_.getVectorData(),
+            std::make_shared<SimpleLightingProperty>(lighting_), false));
     } else {
-        outport_.setData(rasterization);
+
+        for (auto& shaderPair : lineShaders_->getShaders()) {
+            Shader& shader = shaderPair.second;
+            if (!shader.isReady()) configureShader(shader);
+
+            shader.activate();
+            setUniforms(shader);
+            shader.deactivate();
+        }
+
+        std::shared_ptr<const Rasterization> rasterization =
+            std::make_shared<LineRasterization>(*this);
+
+        // If transform is applied, wrap rasterization.
+        if (transformSetting_.transforms_.size() > 0) {
+            outport_.setData(std::make_shared<TransformedRasterization>(
+                rasterization, transformSetting_.getMatrix()));
+        } else {
+            outport_.setData(rasterization);
+        }
     }
 }
 
@@ -180,6 +223,24 @@ void LineRasterizer::configureShader(Shader& shader) {
 
     utilgl::addShaderDefines(shader, lineSettings_.getStippling().getMode());
 
+    shader.build();
+}
+
+void LineRasterizer::configureTubeShader(Shader& shader) {
+    auto fso = shader.getFragmentShaderObject();
+
+    fso->addShaderExtension("GL_NV_gpu_shader5", true);
+    fso->addShaderExtension("GL_EXT_shader_image_load_store", true);
+    fso->addShaderExtension("GL_NV_shader_buffer_load", true);
+    fso->addShaderExtension("GL_EXT_bindable_uniform", true);
+
+    fso->setShaderDefine("USE_FRAGMENT_LIST",
+                         !forceOpaque_.get() && FragmentListRenderer::supportsFragmentLists());
+
+    utilgl::addDefines(shader, lighting_);
+    shader[ShaderType::Vertex]->setShaderDefine("FORCE_RADIUS", false);
+    shader[ShaderType::Vertex]->setShaderDefine("FORCE_COLOR", false);
+    shader[ShaderType::Vertex]->setShaderDefine("USE_SCALARMETACOLOR", false);
     shader.build();
 }
 
@@ -247,5 +308,100 @@ Document LineRasterization::getInfo() const {
 }
 
 Rasterization* LineRasterization::clone() const { return new LineRasterization(*this); }
+
+TubeRasterization::TubeRasterization(std::shared_ptr<MeshShaderCache> tubeShaders,
+                                     std::shared_ptr<MeshShaderCache> tubeShadersAdjacency,
+                                     std::vector<std::shared_ptr<const Mesh>> meshes,
+                                     std::shared_ptr<SimpleLightingProperty> lighting,
+                                     bool forceOpaque)
+    : tubeShaders_(tubeShaders)
+    , tubeShadersAdjacency_(tubeShadersAdjacency)
+    , meshes_(meshes)
+    , lighting_(lighting)
+    , forceOpaque_(forceOpaque) {}
+
+void TubeRasterization::rasterize(const ivec2& imageSize, const mat4& worldMatrixTransform,
+                                  std::function<void(Shader&)> setUniformsRenderer) const {
+
+    const auto hasLineAdjacency = [](Mesh::MeshInfo mi) {
+        return mi.dt == DrawType::Lines &&
+               (mi.ct == ConnectivityType::StripAdjacency || mi.ct == ConnectivityType::Adjacency);
+    };
+    const auto hasLine = [](Mesh::MeshInfo mi) {
+        return mi.dt == DrawType::Lines &&
+               (mi.ct == ConnectivityType::None || mi.ct == ConnectivityType::Strip);
+    };
+
+    const auto hasAnyLine = [](const Mesh& mesh, auto test) {
+        if (mesh.getNumberOfIndicies() > 0) {
+            for (size_t i = 0; i < mesh.getNumberOfIndicies(); ++i) {
+                if (test(mesh.getIndexMeshInfo(i))) return true;
+            }
+        } else {
+            if (test(mesh.getDefaultMeshInfo())) return true;
+        }
+        return false;
+    };
+
+    // The geometry shader generates a six-sided bounding box for each line segment. The fragment
+    // shader does not consider if the current fragment is on a front- or backface. The ray-cylinder
+    // intersection test will thus give the same result for both, hence resulting in z-fighting. To
+    // avoid this we turn on face culling.
+    utilgl::CullFaceState cullstate(GL_BACK);
+
+    const auto draw = [&, hasAnyLine](const Mesh& mesh, Shader& shader, auto test) {
+        if (!hasAnyLine(mesh, test)) return;
+
+        shader.activate();
+        setUniformsRenderer(shader);
+        auto defaultColor = vec4(1);
+        float defaultRadius = 1.f;
+        utilgl::setUniforms(shader, *lighting_);
+        shader.setUniform("defaultColor", defaultColor);
+        shader.setUniform("defaultRadius", defaultRadius);
+
+        utilgl::BlendModeState blending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        utilgl::DepthMaskState depthMask(true);
+        utilgl::DepthFuncState depthFunc(GL_LEQUAL);
+        utilgl::GlBoolState depthTest(GL_DEPTH_TEST, true);
+        MeshDrawerGL::DrawObject drawer(mesh.getRepresentation<MeshGL>(),
+                                        mesh.getDefaultMeshInfo());
+        utilgl::setShaderUniforms(shader, mesh, "geometry");
+        if (mesh.getNumberOfIndicies() > 0) {
+            for (size_t i = 0; i < mesh.getNumberOfIndicies(); ++i) {
+                const auto mi = mesh.getIndexMeshInfo(i);
+                if (test(mi)) {
+                    drawer.draw(i);
+                }
+            }
+        } else {
+            // no index buffers, check mesh default draw type
+            const auto mi = mesh.getDefaultMeshInfo();
+            if (test(mi)) {
+                drawer.draw();
+            }
+        }
+        shader.deactivate();
+    };
+
+    for (const auto& mesh : meshes_) {
+        draw(*mesh, tubeShadersAdjacency_->getShader(*mesh), hasLineAdjacency);
+        draw(*mesh, tubeShaders_->getShader(*mesh), hasLine);
+    }
+}
+
+bool TubeRasterization::usesFragmentLists() const {
+    return !forceOpaque_ && FragmentListRenderer::supportsFragmentLists();
+}
+
+Document TubeRasterization::getInfo() const {
+    Document doc;
+    doc.append("p", fmt::format("Tube rasterization functor with {} line {}. {}.", meshes_.size(),
+                                (meshes_.size() == 1) ? " mesh" : " meshes",
+                                usesFragmentLists() ? "Using A-buffer" : "Rendering opaque"));
+    return doc;
+}
+
+Rasterization* TubeRasterization::clone() const { return new TubeRasterization(*this); }
 
 }  // namespace inviwo
