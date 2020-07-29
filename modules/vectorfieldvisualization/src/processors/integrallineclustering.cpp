@@ -51,9 +51,10 @@ IntegralLineClustering::IntegralLineClustering()
     , in_("in")
     , out_("out")
     , colors_("colors")
-    , nClusters_("nCluster", "Clusters", 8, 1, 500)
-    , init_("init", "Init and Autocluster")
+    , nClusters_("nCluster", "Clusters", 20, 1, 500)
+    , init_("init", "Make Clusters")
     , compute_("compute", "-1 Cluster")
+    , findClusterCount_("findClusterCount", "Find Cluster Count")
     , representatives_("rep", "Representatives")
     , distanceBasedRepresentative_("distRep", "Distance")
     , lengthBasedRepresentative_("lengthRep", "Length")
@@ -63,47 +64,49 @@ IntegralLineClustering::IntegralLineClustering()
     addPort(in_);
     addPort(out_);
     addPort(colors_);
-    addProperties(nClusters_, init_, compute_, representatives_);
+    addProperties(nClusters_, init_, compute_, findClusterCount_, representatives_);
     representatives_.addProperties(distanceBasedRepresentative_, lengthBasedRepresentative_,
                                    densityBasedRepresentative_, densityMapResolution_);
-    nClusters_.setReadOnly(true);
 
-    auto init = [&]() {
-        if (in_.hasData()) {
-            auto lines = in_.getData()->getVector();
-            LogInfo("Begin init distance matrix.");
-            ahc_.init(lines, LineSimilarity::MCPD);
-            LogInfo("End init distance matrix.");
-            LogInfo("Begin finding best cluster count.");
-            auto nClusters = ClusteringAlgorithms::AHC(ahc_).findBestClusterCount();
-            LogInfo("End finding best cluster count: " << nClusters);
-            auto nMerges = lines.size() - nClusters;
-            LogInfo("Begin " << nMerges << " merges.");
-            for (size_t i = 0; i < nMerges; i++) {
-                ahc_.merge();
-            }
-            LogInfo("End " << nMerges << " merges.");
-            nClusters_.setMaxValue(lines.size());
-            nClusters_.set(ahc_.countClusters());
-        }
-    };
-
-    auto compute = [&]() {
+    init_.onChange([&]() { ahc_.reset(); });
+    compute_.onChange([&]() {
         if (in_.hasData()) {
             if (nClusters_.get() > 1) {
                 ahc_.merge();
                 nClusters_.set(ahc_.countClusters());
             }
         }
-    };
+    });
 
-    init_.onChange(init);
-    compute_.onChange(compute);
+    findClusterCount_.onChange([&]() {
+        if (ahc_.ready()) {
+            auto nClusters = ClusteringAlgorithms::AHC(ahc_).findBestClusterCount();
+            LogInfo("Best estimated cluster count is " << nClusters);
+        }
+    });
 }
 
 void IntegralLineClustering::process() {
 
-    if (!ahc_.ready()) return;
+    if (!ahc_.ready()) {
+        if (in_.hasData()) {
+            auto lines = in_.getData()->getVector();
+            if (nClusters_.get() < lines.size()) {
+                using namespace std::chrono;
+                using Clock = high_resolution_clock;
+                using T = time_point<Clock>;
+                auto sec = [](T t0, T t1) { return duration_cast<seconds>((t1) - (t0)).count(); };
+                auto t0 = Clock::now();
+
+                ahc_.init(lines, LineSimilarity::MCPD);
+
+                LogInfo("Distance matrix initialized in " << sec(t0, Clock::now()) << " seconds.");
+
+                auto nMerges = lines.size() - nClusters_.get();
+                for (size_t i = 0; i < nMerges; i++) ahc_.merge();
+            }
+        }
+    }
 
     const auto out = std::make_shared<IntegralLineSet>(in_.getData()->getModelMatrix(),
                                                        in_.getData()->getWorldMatrix());
@@ -113,11 +116,12 @@ void IntegralLineClustering::process() {
     for (int i = 0; i < nClusters_.get(); i++) {
         colormap.push_back(vec4(color::hsv2rgb(vec3(colorstep * i, 1.f, 1.f)), 1.f));
     }
-        
 
     int count = 0;
     for (size_t i = 0; i < nClusters_.get(); i++) {
         const auto cluster = ahc_.getCluster(i);
+
+        if (cluster.empty()) continue;
 
         if (distanceBasedRepresentative_.get()) {
             IntegralLine rep = ClusterRepresentatives::distanceBased(cluster, LineSimilarity::MCPD);

@@ -34,6 +34,7 @@
 #include <inviwo/core/network/networklock.h>
 #include <inviwo/core/util/zip.h>
 #include <inviwo/core/util/raiiutils.h>
+#include <modules/vectorfieldvisualization/algorithms/integrallineoperations.h>
 
 namespace inviwo {
 
@@ -42,37 +43,86 @@ const ProcessorInfo IntegralLineCompare::getProcessorInfo() const { return proce
 // The Class Identifier has to be globally unique. Use a reverse DNS naming scheme
 const ProcessorInfo IntegralLineCompare::processorInfo_{
     "org.inviwo.IntegralLineCompare",  // Class identifier
-    "Integral Line Compare",         // Display name
-    "Vector Field Visualization",           // Category
-    CodeState::Stable,                      // Code state
-    Tags::CPU,                              // Tags
+    "Integral Line Compare",           // Display name
+    "Vector Field Visualization",      // Category
+    CodeState::Stable,                 // Code state
+    Tags::CPU,                         // Tags
 };
 
 IntegralLineCompare::IntegralLineCompare()
-    : Processor(), lines1_("lines1"), lines2_("lines2"), out_("out"), colors_("colors") {
+    : Processor()
+    , lines1_("lines1")
+    , lines2_("lines2")
+    , out_("out")
+    , tubeMesh_("tubeMesh")
+    , colors_("colors")
+    , matchTolerance_("matchTolerance", "Match Tolerance", 0.3f, 0.0f, 0.3f)
+    , noTriples_("noTriples", "No Triples")
+    , tubes_("tubes", "Tubes") {
 
     addPort(lines1_);
     addPort(lines2_);
     addPort(out_);
+    addPort(tubeMesh_);
     addPort(colors_);
+
+    addProperties(matchTolerance_, noTriples_, tubes_);
 }
 
 void IntegralLineCompare::process() {
-    const auto a = *lines1_.getData();
-    const auto b = *lines2_.getData();
-    const auto out = std::make_shared<IntegralLineSet>(mat4(1));
+    const auto set1 = *lines1_.getData();
+    const auto set2 = *lines2_.getData();
+    const auto resultSet = std::make_shared<IntegralLineSet>(mat4(1));
     const auto colors = std::make_shared<std::vector<vec4>>();
-    for (size_t i = 0; i < a.size(); i++) {
-        const auto line = a.at(i);
-        const auto seed = line.getPositions().back();
-        out->push_back(line, i);
-        colors->push_back(vec4(.5f, .5f, 0.f, 1.f));
+
+    auto distance = [](IntegralLine l1, IntegralLine l2) {
+        float sum = .0f;
+        for (int i = 0; i < 3; i++)
+            sum += glm::distance(l1.getPositions()[i], l2.getPositions()[i]);
+        return sum;
+    };
+
+    if (set1.size() != set2.size()) LogWarn("Comparing sets with different number of lines");
+
+    std::vector<vec4> colormap;
+    float colorstep = 1.f / set2.size();
+    for (int i = 0; i < set2.size(); i++) {
+        colormap.push_back(vec4(color::hsv2rgb(vec3(colorstep * i, 1.f, 1.f)), 1.f));
     }
-    for (size_t i = 0; i < b.size(); i++) {
-        out->push_back(b.at(i), a.size() + i);
-        colors->push_back(vec4(0.f, .5f, .5f, 1.f));
+
+    std::vector<size_t> taken;
+    for (size_t li = 0; li < set1.size(); li++) {
+        auto l = set1.getVector()[li];
+        float minDist = std::numeric_limits<float>::infinity();
+        size_t matchedIdx = 0;
+        for (size_t i = 0; i < set2.size(); i++) {
+            float d = distance(l, set2[i]);
+            if (d < minDist) {
+                minDist = d;
+                matchedIdx = i;
+            }
+        }
+        if (std::find(taken.begin(), taken.end(), matchedIdx) < taken.end()) {
+            if (noTriples_) continue;
+        }
+        if (minDist > matchTolerance_) continue;
+        taken.push_back(matchedIdx);
+
+        auto l_match = set2[matchedIdx];
+
+        util::error(l, l_match);
+
+        if (tubes_) {
+            resultSet->push_back(LinePair(l, l_match).meanLine(), matchedIdx);
+        } else {
+            resultSet->push_back(l, matchedIdx);
+            resultSet->push_back(l_match, matchedIdx);
+            colors->push_back(colormap[matchedIdx]);
+            colors->push_back(colormap[matchedIdx]);
+        }
     }
-    out_.setData(out);
+
+    out_.setData(resultSet);
     colors_.setData(colors);
 }
 

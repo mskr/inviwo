@@ -324,6 +324,7 @@ protected:
     FileProperty file_;
     ButtonProperty readButton_;
     ButtonProperty seedButton_;
+    IntSizeTProperty numSeeds_;
 
     OptionPropertyInt subgroupSelector_;
 
@@ -333,6 +334,7 @@ protected:
 
     CompositeProperty spaceStats_;
     IntSizeTProperty pointCloudSize_;
+    ButtonProperty computeStepButton_;
     FloatProperty pointCloudMinNearestDistance_;
     FloatProperty pointCloudMaxNearestDistance_;
     FloatProperty pointCloudAvgNearestDistance_;
@@ -348,6 +350,10 @@ protected:
 
     SimData3D::PointCloud pointcloud;
     std::shared_ptr<SimDataSampling3D::PointCloudVelocitySampler> velocitySampler;
+
+    void createSampler(const Mesh& boundaries);
+
+    void seedOnInputSurface();
 
     std::shared_ptr<Mesh> pointCloudToMesh3D(SimData3D::PointCloud& pointcloud);
 

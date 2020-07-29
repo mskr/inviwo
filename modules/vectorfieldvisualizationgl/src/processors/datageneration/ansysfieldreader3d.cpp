@@ -196,9 +196,9 @@ void read(const std::string file, PointCloud& out) {
 
 namespace inviwo {
 
-    struct BoundedPlane {
-        dvec3 origin, up, right;
-    };
+struct BoundedPlane {
+    dvec3 origin, up, right;
+};
 
 const ProcessorInfo AnsysFieldReader3D::processorInfo_{
     "org.inviwo.AnsysFieldReader3D",  // Class identifier
@@ -222,12 +222,14 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     , file_("filename", "File")
     , readButton_("readButton", "Read")
     , seedButton_("seedButton", "Seed on Input Surface")
+    , numSeeds_("numSeeds", "Seedpoints", 10, 1, 1000)
     , subgroupSelector_("subgroupSelector", "Subgroup")
     , pointcloudVis_("pointCloudVis", "Raw View")
     , pointSize_("pnts", "Point Size")
     , velocityScaling_("velocityScaling", "Velocity")
     , spaceStats_("spaceStats", "Grid Info")
     , pointCloudSize_("pointCloudSize", "Points", 0, 0, std::numeric_limits<size_t>::max())
+    , computeStepButton_("computeStep", "Compute Step (Expensive!)")
     , pointCloudMinNearestDistance_("pointCloudMinDistance", "Min Grid Step")
     , pointCloudMaxNearestDistance_("pointCloudMaxDistance", "Max Grid Step")
     , pointCloudAvgNearestDistance_("pointCloudAvgDistance", "Avg Grid Step")
@@ -254,23 +256,32 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     addPort(insideTest_);
     addPort(streamlineSeeds_);
 
-    addProperties(file_, readButton_, seedButton_, subgroupSelector_, pointcloudVis_, spaceStats_,
-                  interactive_);
+    addProperties(file_, readButton_, seedButton_, numSeeds_, subgroupSelector_, pointcloudVis_,
+                  spaceStats_, interactive_);
 
     pointcloudVis_.addProperties(pointSize_, velocityScaling_);
 
-    spaceStats_.addProperties(pointCloudSize_, pointCloudMinNearestDistance_,
+    spaceStats_.addProperties(pointCloudSize_, computeStepButton_, pointCloudMinNearestDistance_,
                               pointCloudMaxNearestDistance_, pointCloudAvgNearestDistance_,
                               pointCloudMin_, pointCloudMax_, meshMin_, meshMax_);
     pointCloudSize_.setSemantics(PropertySemantics::Text);
     for (auto prop : spaceStats_.getProperties()) prop->setReadOnly(true);
+    computeStepButton_.setReadOnly(false);
 
     interactive_.addProperties(hoverEvents_, clickEvents_, insideTestPoint_);
 
-    auto createSampler = [&](const Mesh& boundaries) {
-        velocitySampler = std::make_shared<PointCloudVelocitySampler>(pointcloud, boundaries);
+    seedButton_.onChange([&]() { seedOnInputSurface(); });
 
-        /*float sum = 0;
+    readButton_.onChange([&]() { process(); });
+
+    computeStepButton_.onChange([&]() {
+        using namespace std::chrono;
+        using Clock = high_resolution_clock;
+        using T = time_point<Clock>;
+        auto sec = [](T t0, T t1) { return duration_cast<seconds>((t1) - (t0)).count(); };
+        auto t0 = Clock::now();
+
+        float sum = 0;
         int count = 0;
         float minNearestDist = std::numeric_limits<float>::infinity();
         float maxNearestDist = 0;
@@ -288,6 +299,8 @@ AnsysFieldReader3D::AnsysFieldReader3D()
         }
         if (count != 0) avgNearestDist = sum / count;
 
+        LogInfo("Analyzed grid step in " << sec(t0, Clock::now()) << " seconds.");
+
         pointCloudMinNearestDistance_.set(minNearestDist);
         pointCloudMaxNearestDistance_.set(maxNearestDist);
         pointCloudAvgNearestDistance_.set(avgNearestDist);
@@ -296,52 +309,20 @@ AnsysFieldReader3D::AnsysFieldReader3D()
         pointSize_.setMaxValue(maxNearestDist * 3.f);
         velocityScaling_.set(.8f);
         velocityScaling_.setMinValue(-2.f);
-        velocityScaling_.setMaxValue(2.f);*/
-
-        pointCloudMin_.set(velocitySampler->pointCloudAABB.min);
-        pointCloudMax_.set(velocitySampler->pointCloudAABB.max);
-        meshMin_.set(velocitySampler->meshAABB.min);
-        meshMax_.set(velocitySampler->meshAABB.max);
-        insideTestPoint_.setMinValue(meshMin_.get() - vec3(.5f));
-        insideTestPoint_.setMaxValue(meshMax_.get() + vec3(.5f));
-
-        sampler_.setData(velocitySampler);
-    };
-
-    readButton_.onChange([this, createSampler]() {
-        SimFileReading3D::read(file_.get(), pointcloud);
-
-        if (pointcloud.vel.empty()) {
-            LogWarn("Velocity not found => abort.");
-            return;
-        }
-
-        pointCloudSize_.set(pointcloud.points.size());
-
-        if (!boundaries_.hasData()) {
-            LogWarn("Read pointcloud without boundary mesh => no sampler, no rescale.");
-            pointCloud_.setData(pointCloudToMesh3D(pointcloud));
-            return;
-        } else {
-            createSampler(*boundaries_.getData());
-        }
-
-        subgroupSelector_.clearOptions();
-        subgroupSelector_.addOption("all", "All", -1);
-        for (const auto g : pointcloud.subgroups) {
-            subgroupSelector_.addOption(std::to_string(g.id), std::to_string(g.id), g.id);
-        }
+        velocityScaling_.setMaxValue(2.f);
     });
 
     subgroupSelector_.onChange([&]() {
-        const auto selected = subgroupSelector_.getSelectedValue();
-        if (!pointcloud.subgroups.empty()) {
+        pointCloud_.setData(pointCloudToMesh3D(pointcloud));
+
+        if (!seedSurface_.hasData()) {
+            const auto selected = subgroupSelector_.getSelectedValue();
             const auto start = selected >= 0 ? pointcloud.subgroups[selected].start : 0;
             const auto end =
                 selected >= 0 ? pointcloud.subgroups[selected].end : pointcloud.points.size();
             auto seeds = std::make_shared<std::vector<vec3>>(pointcloud.points.begin() + start,
                                                              pointcloud.points.begin() + end);
-            if (end - start > 500) {
+            if (end - start > numSeeds_.get()) {
                 auto reduced = std::make_shared<std::vector<vec3>>();
                 std::default_random_engine generator;
                 std::uniform_int_distribution<int> distribution(0, seeds->size());
@@ -350,7 +331,6 @@ AnsysFieldReader3D::AnsysFieldReader3D()
                 seeds = reduced;
             }
             streamlineSeeds_.setData(seeds);
-            pointCloud_.setData(pointCloudToMesh3D(pointcloud));
         }
     });
 
@@ -391,6 +371,75 @@ AnsysFieldReader3D::AnsysFieldReader3D()
             insideTest_.setData(mesh);
         }
     });
+}  // namespace inviwo
+
+AnsysFieldReader3D::~AnsysFieldReader3D() = default;
+
+void AnsysFieldReader3D::initializeResources() {}
+
+void AnsysFieldReader3D::process() {
+
+    using namespace std::chrono;
+    using Clock = high_resolution_clock;
+    using T = time_point<Clock>;
+    auto sec = [](T t0, T t1) { return duration_cast<seconds>((t1) - (t0)).count(); };
+    auto millis = [](T t0, T t1) { return duration_cast<milliseconds>((t1) - (t0)).count(); };
+
+    T t0 = Clock::now();
+
+    SimFileReading3D::read(file_.get(), pointcloud);
+
+    if (pointcloud.vel.empty()) {
+        LogWarn("Velocity not found => abort.");
+        return;
+    }
+
+    pointCloudSize_.set(pointcloud.points.size());
+
+    if (!boundaries_.hasData()) {
+        LogWarn("Read pointcloud without boundary mesh => no sampler, no rescale.");
+        pointCloud_.setData(pointCloudToMesh3D(pointcloud));
+        return;
+    } else {
+        createSampler(*boundaries_.getData());
+    }
+
+    const auto dur = sec(t0, Clock::now());
+    LogInfo("Read field into sampler in " << dur << " seconds");
+
+    auto testPoint = pointcloud.points[pointcloud.points.size() / 2] + vec3(0.01);
+    t0 = Clock::now();
+    if (velocitySampler->inside(testPoint)) {
+        LogInfo("Inside test takes " << millis(t0, Clock::now()) << " millis.");
+        t0 = Clock::now();
+        auto v =
+            pointcloud.vel[*velocitySampler->kdtree.findNearest(testPoint)->getDataAsPointer()];
+        LogInfo("Lookup takes " << millis(t0, Clock::now()) << " millis.");
+    }
+
+    subgroupSelector_.clearOptions();
+    subgroupSelector_.addOption("all", "All", -1);
+    for (const auto g : pointcloud.subgroups) {
+        subgroupSelector_.addOption(std::to_string(g.id), std::to_string(g.id), g.id);
+    }
+
+    if (seedSurface_.hasData()) seedOnInputSurface();
+}
+
+void AnsysFieldReader3D::createSampler(const Mesh& boundaries) {
+    velocitySampler = std::make_shared<PointCloudVelocitySampler>(pointcloud, boundaries);
+
+    pointCloudMin_.set(velocitySampler->pointCloudAABB.min);
+    pointCloudMax_.set(velocitySampler->pointCloudAABB.max);
+    meshMin_.set(velocitySampler->meshAABB.min);
+    meshMax_.set(velocitySampler->meshAABB.max);
+    insideTestPoint_.setMinValue(meshMin_.get() - vec3(.5f));
+    insideTestPoint_.setMaxValue(meshMax_.get() + vec3(.5f));
+
+    sampler_.setData(velocitySampler);
+}
+
+void AnsysFieldReader3D::seedOnInputSurface() {
 
     auto pointMesh = [](std::shared_ptr<std::vector<vec3>> points, std::vector<vec4> color = {}) {
         auto mesh = std::make_shared<Mesh>(DrawType::Points, ConnectivityType::None);
@@ -428,7 +477,7 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     };
 
     auto planeFromMesh = [&, meshGet, pointMesh](Mesh& mesh) {
-            BoundedPlane result;
+        BoundedPlane result;
         auto verts = meshGet(mesh, BufferType::PositionAttrib);
         dvec3 lower(0, std::numeric_limits<double>::infinity(), 0);
         dvec3 upper(0, -std::numeric_limits<double>::infinity(), 0);
@@ -517,38 +566,30 @@ AnsysFieldReader3D::AnsysFieldReader3D()
         return result;
     };
 
-    seedButton_.onChange([&, planeFromMesh]() {
-        if (!seedSurface_.hasData()) {
-            LogWarn("No Seed Surface in Inport.");
-            return;
+    if (!seedSurface_.hasData()) {
+        LogWarn("No Seed Surface in Inport.");
+        return;
+    }
+
+    auto surface = *seedSurface_.getData();
+    BoundedPlane pl = planeFromMesh(surface);
+
+    auto seeds = std::make_shared<std::vector<vec3>>();
+    std::default_random_engine generator;
+    std::vector<vec4> colors;
+    while (seeds->size() < numSeeds_.get()) {
+        const float x = util::randomNumber<float>(generator);
+        const float y = util::randomNumber<float>(generator);
+        const auto p = vec3(pl.origin) + x * vec3(pl.up) + ((y * 1.2f - 0.5f) * vec3(pl.right));
+        if (insideSeedSurface(p, surface, pl)) {
+            seeds->push_back(p);
+            colors.push_back(vec4(0, 1, 0, 1));
         }
+    }
 
-        auto surface = *seedSurface_.getData();
-        BoundedPlane pl = planeFromMesh(surface);
-
-        auto seeds = std::make_shared<std::vector<vec3>>();
-        std::default_random_engine generator;
-        std::vector<vec4> colors;
-        while (seeds->size() < 500) {
-            const float x = util::randomNumber<float>(generator);
-            const float y = util::randomNumber<float>(generator);
-            const auto p = vec3(pl.origin) + x * vec3(pl.up) + ((y * 1.2f - 0.5f) * vec3(pl.right));
-            if (insideSeedSurface(p, surface, pl)) {
-                seeds->push_back(p);
-                colors.push_back(vec4(0,1,0,1));
-            }
-        }
-
-        streamlineSeeds_.setData(seeds);
-        insideTest_.setData(pointMesh(seeds, colors));
-    });
-}  // namespace inviwo
-
-AnsysFieldReader3D::~AnsysFieldReader3D() = default;
-
-void AnsysFieldReader3D::initializeResources() {}
-
-void AnsysFieldReader3D::process() {}
+    streamlineSeeds_.setData(seeds);
+    insideTest_.setData(pointMesh(seeds, colors));
+};
 
 std::shared_ptr<Mesh> AnsysFieldReader3D::pointCloudToMesh3D(PointCloud& pointcloud) {
     const auto numSpheres = pointcloud.points.size();

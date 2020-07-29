@@ -35,6 +35,7 @@
 #include <inviwo/core/common/inviwo.h>
 #include <inviwo/core/processors/processor.h>
 #include <inviwo/core/ports/dataoutport.h>
+#include <inviwo/core/ports/meshport.h>
 
 #include <inviwo/core/properties/stringproperty.h>
 #include <inviwo/core/properties/ordinalproperty.h>
@@ -51,9 +52,23 @@
 
 namespace inviwo {
 
+struct LinePair {
+    IntegralLine &l1, l2;
+    LinePair(IntegralLine& l1, IntegralLine& l2) : l1(l1), l2(l2) {}
+    IntegralLine meanLine() {
+        IntegralLine result;
+        auto p1 = l1.getPositions();
+        auto p2 = l2.getPositions();
+        auto size = std::min(p1.size(), p2.size());
+        for (size_t i = 0; i < size; i++) {
+            result.getPositions().emplace_back(util::glm_convert<dvec3>((p1[i] + p2[i]) / 2.0));
+        }
+        return result;
+    }
+};
+
 class IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLineCompare : public Processor {
 public:
-
     IntegralLineCompare();
     virtual ~IntegralLineCompare() = default;
 
@@ -66,7 +81,12 @@ private:
     IntegralLineSetInport lines1_;
     IntegralLineSetInport lines2_;
     IntegralLineSetOutport out_;
+    MeshOutport tubeMesh_;
     DataOutport<std::vector<vec4>> colors_;
+
+    FloatProperty matchTolerance_;
+    BoolProperty noTriples_;
+    BoolProperty tubes_;
 };
 
 }  // namespace inviwo

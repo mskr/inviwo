@@ -83,9 +83,7 @@ public:
     AHC() {}
     void init(std::vector<IntegralLine> lines,
               std::function<float(IntegralLine, IntegralLine)> similarityFn) {
-        clusters.clear();
-        height.clear();
-        distanceMatrix.clear();
+        reset();
         height.resize(lines.size(), std::numeric_limits<float>::infinity());
         for (size_t i = 0; i < lines.size(); i++) {
             clusters.push_back({
@@ -101,6 +99,11 @@ public:
         }
     }
     bool ready() { return !distanceMatrix.empty(); }
+    void reset() {
+        clusters.clear();
+        height.clear();
+        distanceMatrix.clear();
+    }
     float merge() {
         float minDist = std::numeric_limits<float>::max();
         size_t xMin = 0, yMin = 0;
@@ -137,7 +140,7 @@ public:
         vec2 B(mergeDistances.size() - 1, mergeDistances.back());
         float max = 0;
         size_t nClusters = 0;
-        for (size_t i = mergeDistances.size() - 100; i < mergeDistances.size(); i++) {
+        for (size_t i = mergeDistances.size() / 2; i < mergeDistances.size(); i++) {
             vec2 C(i, mergeDistances[i]);
             float angle = glm::acos(glm::dot(glm::normalize(B - A), glm::normalize(C - A)));
             float d = glm::distance(A, C) * glm::sin(angle);
@@ -229,6 +232,7 @@ private:
     IntProperty nClusters_;
     ButtonProperty init_;
     ButtonProperty compute_;
+    ButtonProperty findClusterCount_;
 
     CompositeProperty representatives_;
     BoolProperty distanceBasedRepresentative_;
@@ -237,6 +241,7 @@ private:
     IntProperty densityMapResolution_;
 
     ClusteringAlgorithms::AHC ahc_;
+
 };
 
 }  // namespace inviwo

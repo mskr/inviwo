@@ -38,19 +38,21 @@
 namespace inviwo {
 
 namespace util {
-IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLine curvature(const IntegralLine &line,
+IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLine curvature(const IntegralLine& line,
                                                                dmat4 toWorld);
-IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLineSet curvature(const IntegralLineSet &lines);
+IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLineSet curvature(const IntegralLineSet& lines);
 
-IVW_MODULE_VECTORFIELDVISUALIZATION_API void curvature(IntegralLine &line, dmat4 toWorld);
-IVW_MODULE_VECTORFIELDVISUALIZATION_API void curvature(IntegralLineSet &lines);
+IVW_MODULE_VECTORFIELDVISUALIZATION_API void curvature(IntegralLine& line, dmat4 toWorld);
+IVW_MODULE_VECTORFIELDVISUALIZATION_API void curvature(IntegralLineSet& lines);
 
-IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLine tortuosity(const IntegralLine &line,
+IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLine tortuosity(const IntegralLine& line,
                                                                 dmat4 toWorld);
-IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLineSet tortuosity(const IntegralLineSet &lines);
+IVW_MODULE_VECTORFIELDVISUALIZATION_API IntegralLineSet tortuosity(const IntegralLineSet& lines);
 
-IVW_MODULE_VECTORFIELDVISUALIZATION_API void tortuosity(IntegralLine &line, dmat4 toWorld);
-IVW_MODULE_VECTORFIELDVISUALIZATION_API void tortuosity(IntegralLineSet &lines);
+IVW_MODULE_VECTORFIELDVISUALIZATION_API void tortuosity(IntegralLine& line, dmat4 toWorld);
+IVW_MODULE_VECTORFIELDVISUALIZATION_API void tortuosity(IntegralLineSet& lines);
+
+IVW_MODULE_VECTORFIELDVISUALIZATION_API void error(IntegralLine&, IntegralLine&);
 }  // namespace util
 
 }  // namespace inviwo
