@@ -88,8 +88,8 @@ IntegralLineClustering::IntegralLineClustering()
 
 void IntegralLineClustering::process() {
 
-    if (!ahc_.ready()) {
-        if (in_.hasData()) {
+    if (in_.hasData()) {
+        if (!ahc_.ready() || in_.isChanged()) {
             auto lines = in_.getData()->getVector();
             if (nClusters_.get() < lines.size()) {
                 using namespace std::chrono;

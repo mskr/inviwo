@@ -58,7 +58,9 @@ IntegralLineCompare::IntegralLineCompare()
     , colors_("colors")
     , matchTolerance_("matchTolerance", "Match Tolerance", 0.3f, 0.0f, 0.3f)
     , noTriples_("noTriples", "No Triples")
-    , tubes_("tubes", "Tubes") {
+    , tubes_("tubes", "Tubes")
+    , splitThreshold_("splitThreshold", "Split Threshold")
+    , divergedLines_("divergedLines", "Diverged Lines") {
 
     addPort(lines1_);
     addPort(lines2_);
@@ -66,7 +68,7 @@ IntegralLineCompare::IntegralLineCompare()
     addPort(tubeMesh_);
     addPort(colors_);
 
-    addProperties(matchTolerance_, noTriples_, tubes_);
+    addProperties(matchTolerance_, noTriples_, tubes_, splitThreshold_, divergedLines_);
 }
 
 void IntegralLineCompare::process() {
@@ -74,6 +76,7 @@ void IntegralLineCompare::process() {
     const auto set2 = *lines2_.getData();
     const auto resultSet = std::make_shared<IntegralLineSet>(mat4(1));
     const auto colors = std::make_shared<std::vector<vec4>>();
+    auto mesh = std::make_shared<MyLineMesh>();
 
     auto distance = [](IntegralLine l1, IntegralLine l2) {
         float sum = .0f;
@@ -113,7 +116,29 @@ void IntegralLineCompare::process() {
         util::error(l, l_match);
 
         if (tubes_) {
-            resultSet->push_back(LinePair(l, l_match).meanLine(), matchedIdx);
+            LinePair pair(l, l_match);
+            MeanLine mean = pair.meanLineUntil(splitThreshold_.get());
+            if (!mean.deviations.empty()) {
+                tubeGfx(
+                    mesh, mean.line.getPositions(), [&](int i) { return mean.deviations[i]; },
+                    [&](int i) { return colormap[matchedIdx]; });
+            }
+
+            // FIXME shading in rasterizer too dark
+
+            // FIXME tube chamfers
+
+            if (mean.isPartial) {
+                LinePair part = pair.lastPart(mean.partialIndex);
+                if (part.l1.getPositions().size() > 0)
+                    tubeGfx(
+                        mesh, part.l1.getPositions(), [&](int i) { return divergedLines_.get(); },
+                        [](int i) { return vec4(1); });
+                if (part.l2.getPositions().size() > 0)
+                    tubeGfx(
+                        mesh, part.l2.getPositions(), [&](int i) { return divergedLines_.get(); },
+                        [](int i) { return vec4(1); });
+            }
         } else {
             resultSet->push_back(l, matchedIdx);
             resultSet->push_back(l_match, matchedIdx);
@@ -124,6 +149,20 @@ void IntegralLineCompare::process() {
 
     out_.setData(resultSet);
     colors_.setData(colors);
+    tubeMesh_.setData(mesh);
+}
+
+void IntegralLineCompare::tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<dvec3> vertices,
+                                  std::function<float(int)> radius,
+                                  std::function<vec4(int)> color) {
+
+    auto meshIndices = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    meshIndices->add(mesh->addVertex(vertices[0], radius(0), color(0)));
+    size_t i = 0;
+    for (; i < vertices.size(); i++) {
+        meshIndices->add(mesh->addVertex(vertices[i], radius(i), color(i)));
+    }
+    meshIndices->add(mesh->addVertex(vertices.back(), radius(i), color(i)));
 }
 
 }  // namespace inviwo

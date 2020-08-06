@@ -74,8 +74,8 @@ TubeRendering::TubeRendering()
     , trackball_(&camera_)
     , lighting_("lighting", "Lighting", &camera_)
     , shaderItems_{{{ShaderType::Vertex, "tuberendering.vert"},
-                    {ShaderType::Geometry, "tuberendering.geom"},
-                    {ShaderType::Fragment, "tuberendering.frag"}}}
+                    {ShaderType::Geometry, "tuberendering-tesselated.geom"},
+                    {ShaderType::Fragment, "tuberendering-tesselated.frag"}}}
     , shaderRequirements_{{{BufferType::PositionAttrib, MeshShaderCache::Mandatory, "vec3"},
                            {BufferType::ColorAttrib, MeshShaderCache::Optional, "vec4"},
                            {BufferType::RadiiAttrib, MeshShaderCache::Optional, "float"},
@@ -144,12 +144,6 @@ void TubeRendering::process() {
         return false;
     };
 
-    // The geometry shader generates a six-sided bounding box for each line segment. The fragment
-    // shader does not consider if the current fragment is on a front- or backface. The ray-cylinder
-    // intersection test will thus give the same result for both, hence resulting in z-fighting. To
-    // avoid this we turn on face culling.
-    utilgl::CullFaceState cullstate(GL_BACK);
-
     const auto draw = [this, hasAnyLine](const Mesh& mesh, Shader& shader, auto test) {
         if (!hasAnyLine(mesh, test)) return;
 
@@ -157,6 +151,13 @@ void TubeRendering::process() {
         TextureUnitContainer units;
         utilgl::bindAndSetUniforms(shader, units, metaColor_);
         utilgl::setUniforms(shader, camera_, lighting_, defaultColor_, defaultRadius_);
+
+        // The geometry shader generates a six-sided bounding box for each line segment. The
+        // fragment shader does not consider if the current fragment is on a front- or backface. The
+        // ray-cylinder intersection test will thus give the same result for both, hence resulting
+        // in z-fighting. To avoid this we turn on face culling.
+        utilgl::CullFaceState cullstate(GL_BACK);
+        glFrontFace(GL_CW);
 
         utilgl::GlBoolState depthTest(GL_DEPTH_TEST, true);
         MeshDrawerGL::DrawObject drawer(mesh.getRepresentation<MeshGL>(),
@@ -177,6 +178,8 @@ void TubeRendering::process() {
             }
         }
         shader.deactivate();
+
+        glFrontFace(GL_CCW);
     };
 
     for (const auto& mesh : inport_) {

@@ -93,6 +93,10 @@ MeshCreator::MeshCreator()
     meshType_.addOption("radiustube", "Polytube with Radius", MeshType::RadiusPolyTube);
     meshType_.addOption("radiustube", "Angled Polytube with Radius",
                         MeshType::RadiusPolyTubeAngled);
+    meshType_.addOption("linecubeadjacencyradii", "Line cube adjacency with radii",
+                        MeshType::LineCubeAdjacencyWithRadii);
+    meshType_.addOption("curvedTubeWithRadiiAndAlpha", "Curved Tube With Radii And Alpha",
+                        MeshType::CurvedTubeWithRadiiAndAlpha);
 
     util::hide(position1_, position2_, normal_, basis_, color_, torusRadius1_, torusRadius2_);
     util::show(meshScale_, meshRes_);
@@ -221,6 +225,16 @@ MeshCreator::MeshCreator()
                 util::show(position1_, position2_, torusRadius1_, torusRadius2_);
                 break;
             }
+            case MeshType::LineCubeAdjacencyWithRadii: {
+                pickingUpdate_ = updateBasis;
+                util::show(basis_, color_);
+                break;
+            }
+            case MeshType::CurvedTubeWithRadiiAndAlpha: {
+                pickingUpdate_ = updateBasis;
+                util::show(basis_, color_);
+                break;
+            }
             default: {
                 pickingUpdate_ = updateNone;
                 util::show(meshScale_, meshRes_);
@@ -331,6 +345,10 @@ std::shared_ptr<Mesh> MeshCreator::createMesh() {
             return radiuspolytube;
         case MeshType::RadiusPolyTubeAngled:
             return radiuspolytubeAngled;
+        case MeshType::LineCubeAdjacencyWithRadii:
+            return meshutil::boundingBoxAdjacencyWithRadii(basis_.getBasisAndOffset(), vec3(color_.get()));
+        case MeshType::CurvedTubeWithRadiiAndAlpha:
+            return meshutil::curvedTubeWithRadiiAndAlpha(basis_.getBasisAndOffset(), vec3(color_.get()));
         default:
             return SimpleMeshCreator::sphere(0.1f, meshRes_.get().x, meshRes_.get().y);
     }

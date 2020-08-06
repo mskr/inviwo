@@ -90,8 +90,8 @@ LineRasterizer::LineRasterizer()
     , tubes_("tubes", "Tubes")
     , lighting_("lighting", "Lighting")
     , shaderItems_{{{ShaderType::Vertex, "tuberendering.vert"},
-                    {ShaderType::Geometry, "tuberendering.geom"},
-                    {ShaderType::Fragment, "tuberendering.frag"}}}
+                    {ShaderType::Geometry, "tuberendering-tesselated.geom"},
+                    {ShaderType::Fragment, "tuberendering-tesselated.frag"}}}
     , shaderRequirements_{{{BufferType::PositionAttrib, MeshShaderCache::Mandatory, "vec3"},
                            {BufferType::ColorAttrib, MeshShaderCache::Optional, "vec4"},
                            {BufferType::RadiiAttrib, MeshShaderCache::Optional, "float"},
@@ -102,14 +102,14 @@ LineRasterizer::LineRasterizer()
                                                 shader.onReload([this]() {
                                                     invalidate(InvalidationLevel::InvalidResources);
                                                 });
-                                                configureTubeShader(shader);
+                                                invalidate(InvalidationLevel::InvalidResources);
                                                 for (auto& obj : shader.getShaderObjects()) {
                                                     obj.addShaderDefine("HAS_ADJACENCY");
                                                 }
                                             }))
     , shaders_(new MeshShaderCache(shaderItems_, shaderRequirements_, [&](Shader& shader) -> void {
         shader.onReload([this]() { invalidate(InvalidationLevel::InvalidResources); });
-        configureTubeShader(shader);
+        invalidate(InvalidationLevel::InvalidResources);
     })) {
 
     addPort(inport_);
@@ -157,6 +157,18 @@ void LineRasterizer::process() {
     if (!inport_.hasData()) return;
 
     if (tubes_) {
+        for (auto& shader : adjacencyShaders_->getShaders()) {
+            if (!shader.second.isReady()) configureTubeShader(shader.second);
+            shader.second.activate();
+            utilgl::setUniforms(shader.second, lighting_);
+            shader.second.deactivate();
+        }
+        for (auto& shader : shaders_->getShaders()) {
+            if (!shader.second.isReady()) configureTubeShader(shader.second);
+            shader.second.activate();
+            utilgl::setUniforms(shader.second, lighting_);
+            shader.second.deactivate();
+        }
         outport_.setData(std::make_shared<TubeRasterization>(
             shaders_, adjacencyShaders_, inport_.getVectorData(),
             std::make_shared<SimpleLightingProperty>(lighting_), false));
@@ -343,12 +355,6 @@ void TubeRasterization::rasterize(const ivec2& imageSize, const mat4& worldMatri
         return false;
     };
 
-    // The geometry shader generates a six-sided bounding box for each line segment. The fragment
-    // shader does not consider if the current fragment is on a front- or backface. The ray-cylinder
-    // intersection test will thus give the same result for both, hence resulting in z-fighting. To
-    // avoid this we turn on face culling.
-    utilgl::CullFaceState cullstate(GL_BACK);
-
     const auto draw = [&, hasAnyLine](const Mesh& mesh, Shader& shader, auto test) {
         if (!hasAnyLine(mesh, test)) return;
 
@@ -360,8 +366,14 @@ void TubeRasterization::rasterize(const ivec2& imageSize, const mat4& worldMatri
         shader.setUniform("defaultColor", defaultColor);
         shader.setUniform("defaultRadius", defaultRadius);
 
+        // The geometry shader generates a six-sided bounding box for each line segment. The
+        // fragment shader does not consider if the current fragment is on a front- or backface. The
+        // ray-cylinder intersection test will thus give the same result for both, hence resulting
+        // in z-fighting. To avoid this we turn on face culling.
+        utilgl::CullFaceState cullstate(GL_BACK);
+
         utilgl::BlendModeState blending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        utilgl::DepthMaskState depthMask(true);
+        utilgl::DepthMaskState depthMask(GL_FALSE);
         utilgl::DepthFuncState depthFunc(GL_LEQUAL);
         utilgl::GlBoolState depthTest(GL_DEPTH_TEST, true);
         MeshDrawerGL::DrawObject drawer(mesh.getRepresentation<MeshGL>(),

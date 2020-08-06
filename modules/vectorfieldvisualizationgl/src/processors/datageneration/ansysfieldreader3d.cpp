@@ -238,6 +238,7 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     , meshMin_("meshMin", "Mesh Min", vec3(0), vec3(-100000), vec3(100000))
     , meshMax_("meshMax", "Mesh Max", vec3(0), vec3(-100000), vec3(100000))
     , interactive_("interactive", "Interactive")
+    , enableInteractive_("enableInteractive", "Enable")
     , hoverEvents_(
           "hoverEvents", "Hover Events", [this](Event* e) { processPickEvent(e); },
           MouseButton::None, MouseState::Move)
@@ -268,7 +269,7 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     for (auto prop : spaceStats_.getProperties()) prop->setReadOnly(true);
     computeStepButton_.setReadOnly(false);
 
-    interactive_.addProperties(hoverEvents_, clickEvents_, insideTestPoint_);
+    interactive_.addProperties(enableInteractive_, hoverEvents_, clickEvents_, insideTestPoint_);
 
     seedButton_.onChange([&]() { seedOnInputSurface(); });
 
@@ -641,6 +642,8 @@ std::shared_ptr<Mesh> AnsysFieldReader3D::pointCloudToMesh3D(PointCloud& pointcl
 }
 
 void AnsysFieldReader3D::processPickEvent(Event* e) {
+    if (!enableInteractive_) return;
+
     const auto mouseEvent = static_cast<MouseEvent*>(e);
     auto mousePos = vec2(mouseEvent->posNormalized());
 

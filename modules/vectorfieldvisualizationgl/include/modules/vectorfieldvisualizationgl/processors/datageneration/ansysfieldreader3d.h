@@ -344,6 +344,7 @@ protected:
     FloatVec3Property meshMax_;
 
     CompositeProperty interactive_;
+    BoolProperty enableInteractive_;
     EventProperty hoverEvents_;
     EventProperty clickEvents_;
     FloatVec3Property insideTestPoint_;

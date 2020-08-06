@@ -644,6 +644,58 @@ std::shared_ptr<PosTexColorMesh> boundingBoxAdjacency(const mat4& basisandoffset
 }
 //! [Using PosTexColorMesh]
 
+std::shared_ptr<MyLineMesh> boundingBoxAdjacencyWithRadii(const mat4& basisandoffset,
+                                                          const vec3& color) {
+    auto mesh = std::make_shared<MyLineMesh>();
+    mesh->setModelMatrix(basisandoffset);
+
+    mesh->addVertices({{vec3(0.0, 0.0, 0.0), .1, vec4(color, .5)},
+                       {vec3(1.0, 0.0, 0.0), .2, vec4(color, .8)},
+                       {vec3(1.0, 1.0, 0.0), .1, vec4(color, .5)},
+                       {vec3(0.0, 1.0, 0.0), .2, vec4(color, .8)},
+                       {vec3(0.0, 0.0, 1.0), .1, vec4(color, .5)},
+                       {vec3(1.0, 0.0, 1.0), .2, vec4(color, .8)},
+                       {vec3(1.0, 1.0, 1.0), .1, vec4(color, .5)},
+                       {vec3(0.0, 1.0, 1.0), .2, vec4(color, .8)}});
+
+    auto inds1 = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    inds1->add({3, 0, 1, 2, 3, 0, 1});
+
+    auto inds2 = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    inds2->add({7, 4, 5, 6, 7, 4, 5});
+
+    auto inds3 = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    inds3->add({3, 0, 4, 7, 3, 0, 4});
+
+    auto inds4 = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+    inds4->add({2, 1, 5, 6, 2, 1, 2});
+
+    return mesh;
+}
+
+std::shared_ptr<MyLineMesh> curvedTubeWithRadiiAndAlpha(const mat4& basisandoffset,
+                                                        const vec3& color, int windings,
+                                                        int circleSubDivs, float minRadius,
+                                                        float maxRadius, float length) {
+    float step = glm::two_pi<float>() / circleSubDivs;
+    auto mesh = std::make_shared<MyLineMesh>();
+    mesh->setModelMatrix(basisandoffset);
+    auto ib = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
+
+    float x = 0, y = 0, z = 0, r = minRadius, a = (r - minRadius) / (maxRadius - minRadius);
+    ib->add(mesh->addVertex(vec3(x, y, z), r, vec4(color, r)));
+    for (int i = 0; i < windings * circleSubDivs; i++) {
+        x = glm::sin(i * step) * (float)i;
+        y = glm::cos(i * step) * (float)i;
+        z = (float)i * length;
+        r = minRadius + (glm::sin((float)i) * .5f + .5f) * (maxRadius - minRadius);
+        a = (r - minRadius) / (maxRadius - minRadius);
+        ib->add(mesh->addVertex(vec3(x, y, z), r, vec4(color, a)));
+    }
+    ib->add(mesh->addVertex(vec3(x, y, z), r, vec4(color, a)));
+    return mesh;
+}
+
 std::shared_ptr<BasicMesh> torus(const vec3& center, const vec3& up_, float r1, float r2,
                                  const ivec2& subdivisions, vec4 color) {
     auto mesh = std::make_shared<BasicMesh>();

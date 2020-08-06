@@ -93,6 +93,16 @@ IVW_MODULE_BASE_API std::shared_ptr<BasicMesh> boundingbox(const mat4& basisando
 IVW_MODULE_BASE_API std::shared_ptr<PosTexColorMesh> boundingBoxAdjacency(
     const mat4& basisandoffset, const vec4& color);
 
+using MyLineMesh =
+    TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer, buffertraits::ColorsBuffer>;
+
+IVW_MODULE_BASE_API std::shared_ptr<MyLineMesh> boundingBoxAdjacencyWithRadii(
+    const mat4& basisandoffset, const vec3& color);
+
+IVW_MODULE_BASE_API std::shared_ptr<MyLineMesh> curvedTubeWithRadiiAndAlpha(
+    const mat4& basisandoffset, const vec3& color, int windings = 5, int circleSubDivs = 16, float minRadius = .5f,
+    float maxRadius = 2.f, float length = 1.f);
+
 IVW_MODULE_BASE_API std::shared_ptr<BasicMesh> torus(const vec3& center,
                                                      const vec3& up = vec3(0, 1, 0), float r1 = 1.f,
                                                      float r2 = .3f,

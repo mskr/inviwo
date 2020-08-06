@@ -109,7 +109,9 @@ private:
         SphereOpt,
         RadiusTube,
         RadiusPolyTube,
-        RadiusPolyTubeAngled
+        RadiusPolyTubeAngled,
+        LineCubeAdjacencyWithRadii,
+        CurvedTubeWithRadiiAndAlpha
     };
 
     void handlePicking(PickingEvent*);

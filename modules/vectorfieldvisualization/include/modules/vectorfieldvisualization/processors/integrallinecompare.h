@@ -52,16 +52,51 @@
 
 namespace inviwo {
 
+struct MeanLine {
+    IntegralLine line;
+    std::vector<float> deviations;
+    bool isPartial = false;
+    size_t partialIndex;
+};
+
 struct LinePair {
-    IntegralLine &l1, l2;
-    LinePair(IntegralLine& l1, IntegralLine& l2) : l1(l1), l2(l2) {}
-    IntegralLine meanLine() {
-        IntegralLine result;
+    IntegralLine l1, l2;
+    LinePair(IntegralLine l1, IntegralLine l2) : l1(l1), l2(l2) {}
+    LinePair lastPart(size_t from) {
+        IntegralLine result1;
+        IntegralLine result2;
+        auto size = std::max(l1.getPositions().size(), l2.getPositions().size());
+        for (size_t i = from; i < size; i++) {
+            if (i < l1.getPositions().size())
+                result1.getPositions().emplace_back(l1.getPositions()[i]);
+            if (i < l2.getPositions().size())
+                result2.getPositions().emplace_back(l2.getPositions()[i]);
+        }
+        return LinePair(result1, result2);
+    }
+    MeanLine meanLineUntil(float splitThreshold) {
+        MeanLine result;
         auto p1 = l1.getPositions();
         auto p2 = l2.getPositions();
         auto size = std::min(p1.size(), p2.size());
         for (size_t i = 0; i < size; i++) {
-            result.getPositions().emplace_back(util::glm_convert<dvec3>((p1[i] + p2[i]) / 2.0));
+            dvec3 mean = (p1[i] + p2[i]) / 2.0;
+            float d = static_cast<float>(glm::distance(p1[i], mean));
+            if (d > splitThreshold) {
+                result.isPartial = true;
+                result.partialIndex = i;
+                break;
+            }
+            result.line.getPositions().emplace_back(mean);
+            result.line.getMetaData<dvec3>("velocity", true)
+                .push_back((l1.getMetaData<dvec3>("velocity", true)[i] +
+                            l2.getMetaData<dvec3>("velocity", true)[i]) /
+                           2.0);
+            result.deviations.push_back(d);
+        }
+        if (!result.isPartial && p1.size() != p2.size()) {
+            result.isPartial = true;
+            result.partialIndex = size - 1;
         }
         return result;
     }
@@ -87,6 +122,14 @@ private:
     FloatProperty matchTolerance_;
     BoolProperty noTriples_;
     BoolProperty tubes_;
+    FloatProperty splitThreshold_;
+    FloatProperty divergedLines_;
+
+    using MyLineMesh = TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
+                                 buffertraits::ColorsBuffer>;
+
+    void tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<dvec3> vertices,
+                 std::function<float(int)> radius, std::function<vec4(int)> color);
 };
 
 }  // namespace inviwo
