@@ -104,6 +104,11 @@ void IntegralLineClustering::process() {
 
                 auto nMerges = lines.size() - nClusters_.get();
                 for (size_t i = 0; i < nMerges; i++) ahc_.merge();
+            } else {
+                out_.setData(in_.getData());
+                colors_.setData(std::make_shared<std::vector<vec4>>(
+                    in_.getData()->getVector().size(), vec4(1)));
+                return;
             }
         }
     }

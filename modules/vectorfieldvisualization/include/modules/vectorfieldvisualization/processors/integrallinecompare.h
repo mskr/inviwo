@@ -46,17 +46,21 @@
 #include <inviwo/core/properties/minmaxproperty.h>
 #include <inviwo/core/properties/optionproperty.h>
 #include <inviwo/core/properties/compositeproperty.h>
+#include <inviwo/core/datastructures/transferfunction.h>
 
 #include <modules/vectorfieldvisualization/datastructures/integralline.h>
 #include <modules/vectorfieldvisualization/datastructures/integrallineset.h>
 
 namespace inviwo {
 
+struct LinePair;
+
 struct MeanLine {
     IntegralLine line;
     std::vector<float> deviations;
     bool isPartial = false;
     size_t partialIndex;
+    LinePair* pair;
 };
 
 struct LinePair {
@@ -84,7 +88,7 @@ struct LinePair {
             float d = static_cast<float>(glm::distance(p1[i], mean));
             if (d > splitThreshold) {
                 result.isPartial = true;
-                result.partialIndex = i;
+                result.partialIndex = i - 1;
                 break;
             }
             result.line.getPositions().emplace_back(mean);
@@ -98,6 +102,7 @@ struct LinePair {
             result.isPartial = true;
             result.partialIndex = size - 1;
         }
+        result.pair = this;
         return result;
     }
 };
@@ -119,14 +124,34 @@ private:
     MeshOutport tubeMesh_;
     DataOutport<std::vector<vec4>> colors_;
 
+    enum class SeverenessMetric { Runlength, ThicknessSum };
+
     FloatProperty matchTolerance_;
     BoolProperty noTriples_;
     BoolProperty tubes_;
     FloatProperty splitThreshold_;
     FloatProperty divergedLines_;
+    TemplateOptionProperty<SeverenessMetric> severenessMetric_;
+    IntSizeTProperty severenessFilter_;
+
+    CompositeProperty colorMaps_;
+    TransferFunctionProperty thickness_;
+    BoolProperty enableRunlength_;
+    TransferFunctionProperty runlength_;
+    BoolProperty enableWallDistance_;
+    TransferFunctionProperty wallDistance_;
+
+    float severeness(MeanLine line);
+
+    struct BoundedFloat {
+        float v, min, max;
+    };
+
+    vec4 colorMapping(BoundedFloat thickness, BoundedFloat runlength,
+                      BoundedFloat wallDistance = {0.f, 0.f, 0.f});
 
     using MyLineMesh = TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
-                                 buffertraits::ColorsBuffer>;
+                                 buffertraits::NormalBuffer, buffertraits::ColorsBuffer>;
 
     void tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<dvec3> vertices,
                  std::function<float(int)> radius, std::function<vec4(int)> color);

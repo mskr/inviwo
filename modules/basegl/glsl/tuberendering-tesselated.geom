@@ -32,19 +32,15 @@
 #include "utils/structs.glsl"
 #include "utils/pickingutils.glsl"
 
-#ifdef HAS_ADJACENCY
 #define SIZE 4
 #define BEGIN 1
 #define END 2
 layout(lines_adjacency) in;
-#else
-#define SIZE 2
-#define BEGIN 0
-#define END 1
-layout(lines) in;
-#endif
 
 #define NGON 16
+    
+float twopi = 6.28318530718;
+float step = twopi / NGON;
 
 layout(triangle_strip, max_vertices = NGON*2+2) out;
 
@@ -53,6 +49,7 @@ uniform CameraParameters camera;
 
 in vec4 vColor_[SIZE];
 flat in float vRadius_[SIZE];
+flat in vec3 vNormal_[SIZE];
 flat in uint pickID_[SIZE];
 
 out vec4 color_;
@@ -61,6 +58,8 @@ out vec3 worldPos_;
 out vec3 worldNormal_;
 
 vec3 ngonTube[NGON*2];
+
+vec3 nborNgons[NGON*2];
 
 vec4 color[2];
 vec4 pickColor;
@@ -92,12 +91,6 @@ vec3 findOrthogonalVector(vec3 v) {
     return b;
 }
 
-vec3 vertexNormal(int vert, int opp, int prev, int next) {
-    return cross(
-            normalize(ngonTube[opp] - ngonTube[vert]),
-            normalize(ngonTube[next] - ngonTube[prev]));
-}
-
 void main() {
     color[0] = vColor_[BEGIN];
     color[1] = vColor_[END];
@@ -107,43 +100,43 @@ void main() {
     pickColor = vec4(pickingIndexToColor(pickID_[BEGIN]), pickID_[BEGIN] == 0 ? 0.0 : 1.0);
     vec3 startPos = gl_in[BEGIN].gl_Position.xyz;
     vec3 endPos = gl_in[END].gl_Position.xyz;
-#ifdef HAS_ADJACENCY
     vec3 prevPos = gl_in[0].gl_Position.xyz;
     vec3 nextPos = gl_in[3].gl_Position.xyz;
-#else
-    vec3 prevPos = startPos;
-    vec3 nextPos = endPos;
-#endif
+    float prevRadius = vRadius_[0];
+    float nextRadius = vRadius_[3];
 
     if (startPos == endPos) return; // zero size segment
 
-    vec3 tubeDir = normalize(endPos-startPos);
-    vec3 radialDir = findOrthogonalVector(tubeDir);
-  
-    vec3 prevDir = startPos-prevPos;
-    vec3 nextDir = nextPos-endPos;
-    vec3 capNormals[2];
-    capNormals[0] = normalize(tubeDir + (prevDir != vec3(0) ? normalize(prevDir) : prevDir));
-    capNormals[1] = normalize(tubeDir + (nextDir != vec3(0) ? normalize(nextDir) : nextDir));
+    vec3 prevNormal = vNormal_[0];
+    vec3 startNormal = vNormal_[1];
+    vec3 endNormal = vNormal_[2];
+    vec3 nextNormal = vNormal_[3];
 
-    vec3 x = findOrthogonalVector(capNormals[0]);
-    vec3 y = cross(x, capNormals[0]);
-    float twopi = 6.28318530718;
-    float step = twopi / NGON;
+    vec3 x = findOrthogonalVector(startNormal);
+    vec3 y = cross(x, startNormal);
+
+    vec3 xp = findOrthogonalVector(prevNormal);
+    vec3 yp = cross(xp, prevNormal);
 
     for(int i = 0; i < NGON; i++) {
         ngonTube[i] = startPos + radius[0] * sin(i*step) * x + radius[0] * cos(i*step) * y;
+        nborNgons[i] = prevPos + prevRadius * sin(i*step) * xp + prevRadius * cos(i*step) * yp;
     }
 
-    x = findOrthogonalVector(capNormals[1]);
-    y = cross(x, capNormals[1]);
+    x = findOrthogonalVector(endNormal);
+    y = cross(x, endNormal);
+
+    vec3 xn = findOrthogonalVector(nextNormal);
+    vec3 yn = cross(xn, nextNormal);
 
     for(int i = NGON; i < 2*NGON; i++) {
         ngonTube[i] = endPos + radius[1] * sin(i*step) * x + radius[1] * cos(i*step) * y;
+        nborNgons[i] = nextPos + nextRadius * sin(i*step) * xn + nextRadius * cos(i*step) * yn;
     }
 
     // sides
-    worldNormal_ = vertexNormal(NGON, 0, 1, NGON-1);
+    worldNormal_ = cross(normalize(ngonTube[NGON-1] - ngonTube[1]),
+        normalize( normalize(ngonTube[0] - nborNgons[0]) + normalize(ngonTube[NGON] - ngonTube[0]) ));
     emitVertex(0);
     for(int i = 0; i < NGON; i++) {
         //emitFace(i, NGON+i, (i+1)%NGON, NGON+((i+1)%NGON));
@@ -152,17 +145,20 @@ void main() {
         int opp = i;
         int prev = NGON + ((NGON+i-1) % NGON);
         int next = NGON + ((NGON+i+1) % NGON);
-        worldNormal_ = vertexNormal(opp, vert, prev, next);
+        worldNormal_ = cross(normalize(ngonTube[prev] - ngonTube[next]),
+            normalize( normalize(nborNgons[vert] - ngonTube[vert]) + normalize(ngonTube[vert] - ngonTube[opp]) ));
         emitVertex(vert);
 
         vert = (i+1)%NGON;
         opp = next;
         prev = i;
         next = (i+2)%NGON;
-        worldNormal_ = vertexNormal(vert, opp, prev, next);
+        worldNormal_ = cross(normalize(ngonTube[prev] - ngonTube[next]),
+            normalize( normalize(ngonTube[vert] - nborNgons[vert]) + normalize(ngonTube[opp] - ngonTube[vert]) ));
         emitVertex(vert);
     }
-    worldNormal_ = vertexNormal(NGON, 0, NGON+1, NGON*2-1);
+    worldNormal_ = cross(normalize(ngonTube[NGON-1] - ngonTube[1]),
+        normalize( normalize(nborNgons[NGON] - ngonTube[NGON]) + normalize(ngonTube[NGON] - ngonTube[0]) ));
     emitVertex(NGON);
     EndPrimitive();
 

@@ -89,12 +89,13 @@ LineRasterizer::LineRasterizer()
           [this](Shader& shader) -> void { invalidate(InvalidationLevel::InvalidResources); }))
     , tubes_("tubes", "Tubes")
     , lighting_("lighting", "Lighting")
-    , shaderItems_{{{ShaderType::Vertex, "tuberendering.vert"},
+    , shaderItems_{{{ShaderType::Vertex, "tuberendering-tesselated.vert"},
                     {ShaderType::Geometry, "tuberendering-tesselated.geom"},
                     {ShaderType::Fragment, "tuberendering-tesselated.frag"}}}
     , shaderRequirements_{{{BufferType::PositionAttrib, MeshShaderCache::Mandatory, "vec3"},
                            {BufferType::ColorAttrib, MeshShaderCache::Optional, "vec4"},
                            {BufferType::RadiiAttrib, MeshShaderCache::Optional, "float"},
+                           {BufferType::NormalAttrib, MeshShaderCache::Optional, "vec3"},
                            {BufferType::PickingAttrib, MeshShaderCache::Optional, "uint"},
                            {BufferType::ScalarMetaAttrib, MeshShaderCache::Optional, "float"}}}
     , adjacencyShaders_(new MeshShaderCache(shaderItems_, shaderRequirements_,
@@ -371,6 +372,7 @@ void TubeRasterization::rasterize(const ivec2& imageSize, const mat4& worldMatri
         // ray-cylinder intersection test will thus give the same result for both, hence resulting
         // in z-fighting. To avoid this we turn on face culling.
         utilgl::CullFaceState cullstate(GL_BACK);
+        glFrontFace(GL_CW);
 
         utilgl::BlendModeState blending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         utilgl::DepthMaskState depthMask(GL_FALSE);
@@ -394,6 +396,8 @@ void TubeRasterization::rasterize(const ivec2& imageSize, const mat4& worldMatri
             }
         }
         shader.deactivate();
+
+        glFrontFace(GL_CCW);
     };
 
     for (const auto& mesh : meshes_) {

@@ -73,12 +73,13 @@ TubeRendering::TubeRendering()
     , camera_("camera", "Camera", util::boundingBox(inport_))
     , trackball_(&camera_)
     , lighting_("lighting", "Lighting", &camera_)
-    , shaderItems_{{{ShaderType::Vertex, "tuberendering.vert"},
+    , shaderItems_{{{ShaderType::Vertex, "tuberendering-tesselated.vert"},
                     {ShaderType::Geometry, "tuberendering-tesselated.geom"},
                     {ShaderType::Fragment, "tuberendering-tesselated.frag"}}}
     , shaderRequirements_{{{BufferType::PositionAttrib, MeshShaderCache::Mandatory, "vec3"},
                            {BufferType::ColorAttrib, MeshShaderCache::Optional, "vec4"},
                            {BufferType::RadiiAttrib, MeshShaderCache::Optional, "float"},
+                           {BufferType::NormalAttrib, MeshShaderCache::Optional, "vec3"},
                            {BufferType::PickingAttrib, MeshShaderCache::Optional, "uint"},
                            {BufferType::ScalarMetaAttrib, MeshShaderCache::Optional, "float"}}}
     , adjacencyShaders_{shaderItems_, shaderRequirements_,
