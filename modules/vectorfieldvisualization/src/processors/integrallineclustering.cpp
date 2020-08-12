@@ -91,6 +91,7 @@ void IntegralLineClustering::process() {
     if (in_.hasData()) {
         if (!ahc_.ready() || in_.isChanged()) {
             auto lines = in_.getData()->getVector();
+            nClusters_.setMaxValue(lines.size());
             if (nClusters_.get() < lines.size()) {
                 using namespace std::chrono;
                 using Clock = high_resolution_clock;
