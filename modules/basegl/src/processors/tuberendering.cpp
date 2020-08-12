@@ -80,6 +80,7 @@ TubeRendering::TubeRendering()
                            {BufferType::ColorAttrib, MeshShaderCache::Optional, "vec4"},
                            {BufferType::RadiiAttrib, MeshShaderCache::Optional, "float"},
                            {BufferType::NormalAttrib, MeshShaderCache::Optional, "vec3"},
+                           {BufferType::TexcoordAttrib, MeshShaderCache::Optional, "vec3"},
                            {BufferType::PickingAttrib, MeshShaderCache::Optional, "uint"},
                            {BufferType::ScalarMetaAttrib, MeshShaderCache::Optional, "float"}}}
     , adjacencyShaders_{shaderItems_, shaderRequirements_,

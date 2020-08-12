@@ -39,8 +39,7 @@ layout(lines_adjacency) in;
 
 #define NGON 16
     
-float twopi = 6.28318530718;
-float step = twopi / NGON;
+float TWOPI = 6.28318530718;
 
 layout(triangle_strip, max_vertices = NGON*2+2) out;
 
@@ -50,6 +49,7 @@ uniform CameraParameters camera;
 in vec4 vColor_[SIZE];
 flat in float vRadius_[SIZE];
 flat in vec3 vNormal_[SIZE];
+flat in vec3 vTexCoord_[SIZE];
 flat in uint pickID_[SIZE];
 
 out vec4 color_;
@@ -97,26 +97,41 @@ void main() {
     float radius[2];
     radius[0] = vRadius_[BEGIN];
     radius[1] = vRadius_[END];
+    if (radius[0] == 0) { radius[0] = .0001; color[0].a = 0; }
+    if (radius[1] == 0) return;
     pickColor = vec4(pickingIndexToColor(pickID_[BEGIN]), pickID_[BEGIN] == 0 ? 0.0 : 1.0);
     vec3 startPos = gl_in[BEGIN].gl_Position.xyz;
     vec3 endPos = gl_in[END].gl_Position.xyz;
+    vec3 startNormal = vNormal_[1];
+    vec3 endNormal = vNormal_[2];
+
     vec3 prevPos = gl_in[0].gl_Position.xyz;
     vec3 nextPos = gl_in[3].gl_Position.xyz;
     float prevRadius = vRadius_[0];
     float nextRadius = vRadius_[3];
-
-    if (startPos == endPos) return; // zero size segment
-
     vec3 prevNormal = vNormal_[0];
-    vec3 startNormal = vNormal_[1];
-    vec3 endNormal = vNormal_[2];
     vec3 nextNormal = vNormal_[3];
+
+    bool firstSegment = startPos == prevPos;
+    bool lastSegment = endPos == nextPos;
+
+    if (firstSegment) prevPos = startPos - (endPos - startPos);
+    if (lastSegment) nextPos = endPos + (endPos - startPos);
+
+    vec3 startHalftubeNormal = vTexCoord_[1];
+    vec3 endHalftubeNormal = vTexCoord_[2];
+
+    if (startHalftubeNormal != vec3(0)) {
+        // for halftubes start here
+    }
 
     vec3 x = findOrthogonalVector(startNormal);
     vec3 y = cross(x, startNormal);
 
     vec3 xp = findOrthogonalVector(prevNormal);
     vec3 yp = cross(xp, prevNormal);
+
+    float step = TWOPI / NGON;
 
     for(int i = 0; i < NGON; i++) {
         ngonTube[i] = startPos + radius[0] * sin(i*step) * x + radius[0] * cos(i*step) * y;
@@ -134,45 +149,53 @@ void main() {
         nborNgons[i] = nextPos + nextRadius * sin(i*step) * xn + nextRadius * cos(i*step) * yn;
     }
 
-    // sides
-    worldNormal_ = cross(normalize(ngonTube[NGON-1] - ngonTube[1]),
-        normalize( normalize(ngonTube[0] - nborNgons[0]) + normalize(ngonTube[NGON] - ngonTube[0]) ));
-    emitVertex(0);
-    for(int i = 0; i < NGON; i++) {
-        //emitFace(i, NGON+i, (i+1)%NGON, NGON+((i+1)%NGON));
+    if (startPos != endPos) {
 
-        int vert = NGON+i;
-        int opp = i;
-        int prev = NGON + ((NGON+i-1) % NGON);
-        int next = NGON + ((NGON+i+1) % NGON);
-        worldNormal_ = cross(normalize(ngonTube[prev] - ngonTube[next]),
-            normalize( normalize(nborNgons[vert] - ngonTube[vert]) + normalize(ngonTube[vert] - ngonTube[opp]) ));
-        emitVertex(vert);
+        // sides
+        worldNormal_ = cross(normalize(ngonTube[NGON-1] - ngonTube[1]),
+            normalize( normalize(ngonTube[0] - nborNgons[0]) + normalize(ngonTube[NGON] - ngonTube[0]) ));
+        emitVertex(0);
+        for(int i = 0; i < NGON; i++) {
+            //emitFace(i, NGON+i, (i+1)%NGON, NGON+((i+1)%NGON));
 
-        vert = (i+1)%NGON;
-        opp = next;
-        prev = i;
-        next = (i+2)%NGON;
-        worldNormal_ = cross(normalize(ngonTube[prev] - ngonTube[next]),
-            normalize( normalize(ngonTube[vert] - nborNgons[vert]) + normalize(ngonTube[opp] - ngonTube[vert]) ));
-        emitVertex(vert);
+            int vert = NGON+i;
+            int opp = i;
+            int prev = NGON + ((NGON+i-1) % NGON);
+            int next = NGON + ((NGON+i+1) % NGON);
+            worldNormal_ = cross(normalize(ngonTube[prev] - ngonTube[next]),
+                normalize( normalize(nborNgons[vert] - ngonTube[vert]) + normalize(ngonTube[vert] - ngonTube[opp]) ));
+            emitVertex(vert);
+
+            vert = (i+1)%NGON;
+            opp = next;
+            prev = i;
+            next = (i+2)%NGON;
+            worldNormal_ = cross(normalize(ngonTube[prev] - ngonTube[next]),
+                normalize( normalize(ngonTube[vert] - nborNgons[vert]) + normalize(ngonTube[opp] - ngonTube[vert]) ));
+            emitVertex(vert);
+        }
+        worldNormal_ = cross(normalize(ngonTube[NGON-1] - ngonTube[1]),
+            normalize( normalize(nborNgons[NGON] - ngonTube[NGON]) + normalize(ngonTube[NGON] - ngonTube[0]) ));
+        emitVertex(NGON);
+        EndPrimitive();
+
+        if (firstSegment) {
+            // front
+            // for (int i = 0; i < NGON/2; i++) {
+            //     emitVertex((NGON-i)%NGON);
+            //     emitVertex(i+1);
+            // }
+            // EndPrimitive();
+        }
+        
+    } else {
+
+        // // back
+        // for (int i = 0; i < NGON/2; i++) {
+        //     emitVertex(i==0? NGON: 2*NGON-i);
+        //     emitVertex(NGON+1+i);
+        // }
+        // EndPrimitive();
+
     }
-    worldNormal_ = cross(normalize(ngonTube[NGON-1] - ngonTube[1]),
-        normalize( normalize(nborNgons[NGON] - ngonTube[NGON]) + normalize(ngonTube[NGON] - ngonTube[0]) ));
-    emitVertex(NGON);
-    EndPrimitive();
-
-    // front
-    for (int i = 0; i < NGON/2; i++) {
-        emitVertex((NGON-i)%NGON);
-        emitVertex(i+1);
-    }
-    EndPrimitive();
-
-    // back
-    for (int i = 0; i < NGON/2; i++) {
-        emitVertex(i==0? NGON: 2*NGON-i);
-        emitVertex(NGON+1+i);
-    }
-    EndPrimitive();
 }

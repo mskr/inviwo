@@ -37,9 +37,12 @@ uniform vec4 defaultColor = vec4(1, 0, 0, 1);
 uniform float defaultRadius = 0.1f;
 uniform sampler2D metaColor;
 
+in vec3 in_TexCoord;
+
 out vec4 vColor_;
 flat out float vRadius_;
 flat out vec3 vNormal_;
+flat out vec3 vTexCoord_;
 flat out uint pickID_;
  
 void main() {
@@ -58,6 +61,7 @@ void main() {
 #endif
 
 	vNormal_ = in_Normal;
+    vTexCoord_ = in_TexCoord;
 
 #if defined(HAS_PICKING)
     pickID_ = in_Picking;

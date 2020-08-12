@@ -30,11 +30,8 @@
 #include <modules/vectorfieldvisualization/processors/integrallinecompare.h>
 #include <modules/vectorfieldvisualization/processors/3d/pathlines.h>
 #include <modules/vectorfieldvisualization/processors/3d/streamlines.h>
-#include <inviwo/core/datastructures/geometry/basicmesh.h>
-#include <inviwo/core/network/networklock.h>
-#include <inviwo/core/util/zip.h>
-#include <inviwo/core/util/raiiutils.h>
 #include <modules/vectorfieldvisualization/algorithms/integrallineoperations.h>
+#include <modules/base/algorithm/meshutils.h>
 
 namespace inviwo {
 
@@ -55,14 +52,23 @@ IntegralLineCompare::IntegralLineCompare()
     , lines2_("lines2")
     , out_("out")
     , tubeMesh_("tubeMesh")
+    , podMesh_("podMesh")
     , colors_("colors")
     , matchTolerance_("matchTolerance", "Match Tolerance", 0.3f, 0.0f, 0.3f)
     , noTriples_("noTriples", "No Triples")
     , tubes_("tubes", "Tubes")
     , splitThreshold_("splitThreshold", "Split Threshold")
-    , divergedLines_("divergedLines", "Diverged Lines")
-    , severenessMetric_("severenessMetric", "Severeness Metric")
-    , severenessFilter_("severenessFilter", "Severeness Filter", 1000, 1, 1000)
+    , diverged_("diverged", "Diverged Lines, Point of Divergence")
+    , podSize_("podSize", "POD Size", .1f, 0.f, 1.f)
+    , podColor_("podColor", "POD Color", vec4(1.0f, 1.0f, 1.0f, 1.0f), vec4(0.0f), vec4(1.0f),
+                vec4(0.01f), InvalidationLevel::InvalidOutput, PropertySemantics::Color)
+    , earlyEndColor_("earlyEndColor", "Early End Color", vec4(1.0f, 1.0f, 1.0f, 1.0f), vec4(0.0f),
+                     vec4(1.0f), vec4(0.01f), InvalidationLevel::InvalidOutput,
+                     PropertySemantics::Color)
+    , divergedLines_("divergedLines", "Line Size")
+    , severity_("severity", "Severity")
+    , severityMetric_("severityMetric", "Metric")
+    , severityFilter_("severityFilter", "Filter", 1000, 1, 1000)
     , colorMaps_("colorMaps", "Colormaps")
     , thickness_("thickness", "Thickness",
                  TransferFunction({{0.0f, vec4(0.0f, 0.1f, 1.0f, 1.0f)},
@@ -79,16 +85,25 @@ IntegralLineCompare::IntegralLineCompare()
     addPort(lines2_);
     addPort(out_);
     addPort(tubeMesh_);
+    addPort(podMesh_);
     addPort(colors_);
 
-    severenessMetric_.addOption("runlength", "Runlength", SeverenessMetric::Runlength);
-    severenessMetric_.addOption("thickness", "Thickness", SeverenessMetric::ThicknessSum);
-
-    addProperties(matchTolerance_, noTriples_, tubes_, splitThreshold_, divergedLines_,
-                  severenessMetric_, severenessFilter_, colorMaps_);
+    addProperties(matchTolerance_, noTriples_, tubes_, splitThreshold_, diverged_, severity_,
+                  colorMaps_);
+    diverged_.addProperties(podSize_, podColor_, earlyEndColor_, divergedLines_);
+    severity_.addProperties(severityMetric_, severityFilter_);
 
     colorMaps_.addProperties(thickness_, enableRunlength_, runlength_, enableWallDistance_,
                              wallDistance_);
+
+    severityMetric_.addOption("runlength", "Runlength", SeverenessMetric::Runlength);
+    severityMetric_.addOption("runlengthUntilDiverged", "Runlength Until Diverged",
+                              SeverenessMetric::RunlengthUntilDiverged);
+    severityMetric_.addOption("thickness", "Thickness", SeverenessMetric::ThicknessSum);
+    severityMetric_.addOption("lengthAndThickness", "Length And Thickness",
+                              SeverenessMetric::LengthAndThickness);
+    severityMetric_.set(SeverenessMetric::LengthAndThickness);
+    severityMetric_.setCurrentStateAsDefault();
 
     runlength_.setReadOnly(!enableRunlength_);
     wallDistance_.setReadOnly(!enableWallDistance_);
@@ -102,10 +117,11 @@ void IntegralLineCompare::process() {
     const auto resultSet = std::make_shared<IntegralLineSet>(mat4(1));
     const auto colors = std::make_shared<std::vector<vec4>>();
     auto mesh = std::make_shared<MyLineMesh>();
+    auto podMesh = std::make_shared<BasicMesh>();
 
     auto distance = [](IntegralLine l1, IntegralLine l2) {
         float sum = .0f;
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 1; i++)
             sum += glm::distance(l1.getPositions()[i], l2.getPositions()[i]);
         return sum;
     };
@@ -187,46 +203,67 @@ void IntegralLineCompare::process() {
         if (l < minRunlength) minRunlength = l;
         if (l > maxRunlength) maxRunlength = l;
 
-        // TODO get wall distances from sampler
-
         means.push_back(mean);
     }
 
-    severenessFilter_.setMaxValue(numPairs);
+    severityFilter_.setMaxValue(numPairs);
 
     std::sort(means.begin(), means.end(),
               [&](MeanLine a, MeanLine b) { return severeness(a) > severeness(b); });
 
     // Create mesh to render
 
-    for (size_t i = 0; i < severenessFilter_.get(); i++) {
+    for (size_t i = 0; i < severityFilter_.get(); i++) {
         MeanLine mean = means[i];
 
-        if (!mean.deviations.empty()) {
+        if (mean.pair->bothExist()) {
+
             tubeGfx(
                 mesh, mean.line.getPositions(), [&](int i) { return mean.deviations[i]; },
                 [&](int i) {
                     return colorMapping({mean.deviations[i], minDeviation, maxDeviation},
                                         {(float)mean.line.getLength(), minRunlength, maxRunlength});
-                });
-        }
+                },
+                [](int i) { return vec3(0); });
 
-        if (mean.isPartial) {
-            LinePair part = mean.pair->lastPart(mean.partialIndex);
-            if (part.l1.getPositions().size() > 0)
+            BridgeFace bridge = mean.pair->bridgeFace();
+            if (bridge.l1Normals.size() != mean.pair->l1.getPositions().size()) {
+                LogWarn("Bridge l1 normals " << bridge.l1Normals.size() << " instead of "
+                                             << mean.pair->l1.getPositions().size());
+            }
+            if (bridge.l2Normals.size() != mean.pair->l2.getPositions().size()) {
+                LogWarn("Bridge l2 normals " << bridge.l2Normals.size() << " instead of "
+                                             << mean.pair->l2.getPositions().size());
+            }
+
+            if (mean.isPairDiverged) {
+                podGfx(podMesh, vec3(mean.line.getPositions().back()), podSize_.get(), podColor_.get());
+            } else if (mean.isPairOfDifferentLength) {
+                podGfx(podMesh, vec3(mean.line.getPositions().back()), podSize_.get(), earlyEndColor_.get());
+            }
+
+            if (divergedLines_.get() > 0.f) {
+                LinePair ends = mean.pair->lastPart(mean.endIndex);
+                auto color =
+                    colorMapping({mean.deviations.back(), minDeviation, maxDeviation},
+                                 {(float)mean.line.getLength(), minRunlength, maxRunlength});
                 tubeGfx(
-                    mesh, part.l1.getPositions(), [&](int i) { return divergedLines_.get(); },
-                    [](int i) { return vec4(1); });
-            if (part.l2.getPositions().size() > 0)
+                    mesh, ends.l1.getPositions(), [&](int i) { return divergedLines_.get(); },
+                    [&](int i) { return color; },
+                    [&](int i) { return bridge.l1Normals[mean.endIndex + i]; });
+
                 tubeGfx(
-                    mesh, part.l2.getPositions(), [&](int i) { return divergedLines_.get(); },
-                    [](int i) { return vec4(1); });
+                    mesh, ends.l2.getPositions(), [&](int i) { return divergedLines_.get(); },
+                    [&](int i) { return color; },
+                    [&](int i) { return bridge.l2Normals[mean.endIndex + i]; });
+            }
         }
     }
 
     out_.setData(resultSet);
     colors_.setData(colors);
     tubeMesh_.setData(mesh);
+    podMesh_.setData(podMesh);
 }
 
 float IntegralLineCompare::severeness(MeanLine mean) {
@@ -236,13 +273,17 @@ float IntegralLineCompare::severeness(MeanLine mean) {
         sum += d;
     }
 
-    switch (severenessMetric_.get()) {
+    switch (severityMetric_.get()) {
         case SeverenessMetric::Runlength:
             return 1.f / mean.line.getLength();
+        case SeverenessMetric::RunlengthUntilDiverged:
+            return mean.isPairDiverged ? 1.f / mean.line.getLength() : .0f;
         case SeverenessMetric::ThicknessSum:
             return sum;
+        case SeverenessMetric::LengthAndThickness:
+            return 1.f / mean.line.getLength() + sum;
         default:
-            return sum;
+            return 1.f / mean.line.getLength() + sum;
     }
 }
 
@@ -268,28 +309,35 @@ vec4 IntegralLineCompare::colorMapping(BoundedFloat thickness, BoundedFloat runl
 }
 
 void IntegralLineCompare::tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<dvec3> vertices,
-                                  std::function<float(int)> radius,
-                                  std::function<vec4(int)> color) {
+                                  std::function<float(int)> radius, std::function<vec4(int)> color,
+                                  std::function<vec3(int)> halftubeNormal) {
     auto meshIndices = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
-
-    //FIXME first and last line segment normals
 
     for (size_t i = 0; i < vertices.size(); i++) {
         if (i == 0) {
             vec3 dir = glm::normalize(vertices[i + 1] - vertices[i]);
-            meshIndices->add(mesh->addVertex(vertices[0], radius(0), dir, color(0)));
-            meshIndices->add(mesh->addVertex(vertices[0], radius(0), dir, color(0)));
+            meshIndices->add(
+                mesh->addVertex(vertices[0], radius(0), dir, color(0), halftubeNormal(0)));
+            meshIndices->add(
+                mesh->addVertex(vertices[0], radius(0), dir, color(0), halftubeNormal(0)));
         } else if (i > 0 && i < (vertices.size() - 1)) {
             vec3 dir = glm::normalize(vertices[i + 1] - vertices[i]);
             vec3 prevDir = glm::normalize(vertices[i] - vertices[i - 1]);
             vec3 normal = glm::normalize(dir + prevDir);
-            meshIndices->add(mesh->addVertex(vertices[i], radius(i), normal, color(i)));
+            meshIndices->add(
+                mesh->addVertex(vertices[i], radius(i), normal, color(i), halftubeNormal(i)));
         } else {
             vec3 prevDir = glm::normalize(vertices[i] - vertices[i - 1]);
-            meshIndices->add(mesh->addVertex(vertices.back(), radius(i), prevDir, color(i)));
-            meshIndices->add(mesh->addVertex(vertices.back(), radius(i), prevDir, color(i)));
+            meshIndices->add(
+                mesh->addVertex(vertices.back(), radius(i), prevDir, color(i), halftubeNormal(i)));
+            meshIndices->add(
+                mesh->addVertex(vertices.back(), radius(i), prevDir, color(i), halftubeNormal(i)));
         }
     }
+}
+
+void IntegralLineCompare::podGfx(std::shared_ptr<BasicMesh> mesh, vec3 pos, float radius, vec4 color) {
+    meshutil::sphere(pos, radius, color, mesh);
 }
 
 }  // namespace inviwo

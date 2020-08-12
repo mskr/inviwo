@@ -47,9 +47,12 @@
 #include <inviwo/core/properties/optionproperty.h>
 #include <inviwo/core/properties/compositeproperty.h>
 #include <inviwo/core/datastructures/transferfunction.h>
+#include <inviwo/core/properties/transferfunctionproperty.h>
 
 #include <modules/vectorfieldvisualization/datastructures/integralline.h>
 #include <modules/vectorfieldvisualization/datastructures/integrallineset.h>
+#include <inviwo/core/datastructures/geometry/typedmesh.h>
+#include <inviwo/core/datastructures/geometry/basicmesh.h>
 
 namespace inviwo {
 
@@ -58,14 +61,21 @@ struct LinePair;
 struct MeanLine {
     IntegralLine line;
     std::vector<float> deviations;
-    bool isPartial = false;
-    size_t partialIndex;
+    size_t endIndex;
     LinePair* pair;
+    bool isPairDiverged = false;
+    bool isPairOfDifferentLength = false;
+};
+
+struct BridgeFace {
+    std::vector<vec3> l1Normals;
+    std::vector<vec3> l2Normals;
 };
 
 struct LinePair {
     IntegralLine l1, l2;
     LinePair(IntegralLine l1, IntegralLine l2) : l1(l1), l2(l2) {}
+    bool bothExist() { return !l1.getPositions().empty() && !l2.getPositions().empty(); }
     LinePair lastPart(size_t from) {
         IntegralLine result1;
         IntegralLine result2;
@@ -83,14 +93,32 @@ struct LinePair {
         auto p1 = l1.getPositions();
         auto p2 = l2.getPositions();
         auto size = std::min(p1.size(), p2.size());
-        for (size_t i = 0; i < size; i++) {
+        size_t i = 0;
+        for (; i < size; i++) {
             dvec3 mean = (p1[i] + p2[i]) / 2.0;
             float d = static_cast<float>(glm::distance(p1[i], mean));
+
             if (d > splitThreshold) {
-                result.isPartial = true;
-                result.partialIndex = i - 1;
+                result.isPairDiverged = true;
+
+                if (i > 0) {
+                    dvec3 prevMean = (p1[i - 1] + p2[i - 1]) / 2.0;
+                    float d_prev = static_cast<float>(glm::distance(p1[i - 1], prevMean));
+                    auto interpolatedMean =
+                        prevMean + static_cast<double>((splitThreshold - d_prev) / (d - d_prev)) *
+                                       (mean - prevMean);
+
+                    result.line.getPositions().emplace_back(interpolatedMean);
+                    result.line.getMetaData<dvec3>("velocity", true)
+                        .push_back((l1.getMetaData<dvec3>("velocity", true)[i] +
+                                    l2.getMetaData<dvec3>("velocity", true)[i]) /
+                                   2.0);
+                    result.deviations.push_back(splitThreshold);
+                }
+
                 break;
             }
+
             result.line.getPositions().emplace_back(mean);
             result.line.getMetaData<dvec3>("velocity", true)
                 .push_back((l1.getMetaData<dvec3>("velocity", true)[i] +
@@ -98,11 +126,64 @@ struct LinePair {
                            2.0);
             result.deviations.push_back(d);
         }
-        if (!result.isPartial && p1.size() != p2.size()) {
-            result.isPartial = true;
-            result.partialIndex = size - 1;
+
+        if (p1.size() != p2.size()) {
+            result.isPairOfDifferentLength = true;
         }
+
+        result.endIndex = i;
         result.pair = this;
+        return result;
+    }
+    BridgeFace bridgeFace() {
+        BridgeFace result;
+        auto p1 = l1.getPositions();
+        auto p2 = l2.getPositions();
+        if (p1.empty() || p2.empty()) return result;
+
+        auto size = std::max(p1.size(), p2.size());
+
+        vec3 lastL1BridgeVec, lastL2BridgeVec;
+
+        for (size_t i = 0; i < size; i++) {
+            if (i < p1.size()) {
+                vec3 l1BridgeVec;
+                vec3 l1Dir;
+                if (i < p2.size())
+                    l1BridgeVec = p2[i] - p1[i];
+                else
+                    l1BridgeVec = lastL1BridgeVec;
+                if (i == 0 && i < p1.size() - 1)
+                    l1Dir = p1[i + 1] - p1[i];
+                else if (i < p1.size() - 1)
+                    l1Dir = p1[i + 1] - p1[i - 1];
+                else
+                    l1Dir = p1[i] - p1[i - 1];
+                vec3 l1BridgeNormal =
+                    glm::cross(glm::normalize(l1BridgeVec), glm::normalize(l1Dir));
+                result.l1Normals.push_back(glm::cross(glm::normalize(l1Dir), l1BridgeNormal));
+                lastL1BridgeVec = l1BridgeVec;
+            }
+
+            if (i < p2.size()) {
+                vec3 l2BridgeVec;
+                if (i < p1.size())
+                    l2BridgeVec = p1[i] - p2[i];
+                else
+                    l2BridgeVec = lastL2BridgeVec;
+                vec3 l2Dir;
+                if (i == 0 && i < p2.size() - 1)
+                    l2Dir = p2[i + 1] - p2[i];
+                else if (i < p2.size() - 1)
+                    l2Dir = p2[i + 1] - p2[i - 1];
+                else
+                    l2Dir = p2[i] - p2[i - 1];
+                vec3 l2BridgeNormal =
+                    glm::cross(glm::normalize(l2BridgeVec), glm::normalize(l2Dir));
+                result.l2Normals.push_back(glm::cross(glm::normalize(l2Dir), l2BridgeNormal));
+                lastL2BridgeVec = l2BridgeVec;
+            }
+        }
         return result;
     }
 };
@@ -122,17 +203,25 @@ private:
     IntegralLineSetInport lines2_;
     IntegralLineSetOutport out_;
     MeshOutport tubeMesh_;
+    MeshOutport podMesh_;
     DataOutport<std::vector<vec4>> colors_;
 
-    enum class SeverenessMetric { Runlength, ThicknessSum };
+    enum class SeverenessMetric { Runlength, RunlengthUntilDiverged, ThicknessSum, LengthAndThickness };
 
     FloatProperty matchTolerance_;
     BoolProperty noTriples_;
     BoolProperty tubes_;
     FloatProperty splitThreshold_;
+
+    CompositeProperty diverged_;
+    FloatProperty podSize_;
+    FloatVec4Property podColor_;
+    FloatVec4Property earlyEndColor_;
     FloatProperty divergedLines_;
-    TemplateOptionProperty<SeverenessMetric> severenessMetric_;
-    IntSizeTProperty severenessFilter_;
+
+    CompositeProperty severity_;
+    TemplateOptionProperty<SeverenessMetric> severityMetric_;
+    IntSizeTProperty severityFilter_;
 
     CompositeProperty colorMaps_;
     TransferFunctionProperty thickness_;
@@ -150,11 +239,17 @@ private:
     vec4 colorMapping(BoundedFloat thickness, BoundedFloat runlength,
                       BoundedFloat wallDistance = {0.f, 0.f, 0.f});
 
-    using MyLineMesh = TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
-                                 buffertraits::NormalBuffer, buffertraits::ColorsBuffer>;
+    using MyLineMesh =
+        TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
+                  buffertraits::NormalBuffer, buffertraits::ColorsBuffer,
+                  buffertraits::TexcoordBuffer<3>>;
 
     void tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<dvec3> vertices,
-                 std::function<float(int)> radius, std::function<vec4(int)> color);
+                 std::function<float(int)> radius, std::function<vec4(int)> color,
+                 std::function<vec3(int)> halftubeNormal);
+
+    void podGfx(std::shared_ptr<BasicMesh> mesh, vec3 pos, float radius, vec4 color);
+
 };
 
 }  // namespace inviwo
