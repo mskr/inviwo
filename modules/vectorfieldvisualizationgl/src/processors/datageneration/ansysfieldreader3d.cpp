@@ -576,8 +576,22 @@ void AnsysFieldReader3D::seedOnInputSurface() {
     BoundedPlane pl = planeFromMesh(surface);
 
     auto seeds = std::make_shared<std::vector<vec3>>();
-    std::default_random_engine generator;
     std::vector<vec4> colors;
+
+    size_t gridSize = 1;
+    while (gridSize * gridSize < numSeeds_.get()) gridSize++;
+
+    for (size_t i = 0; i < numSeeds_.get(); i++) {
+        float x = (float)(i % gridSize) / (float)gridSize;
+        float y = (float)(i / gridSize) / (float)gridSize;
+        const auto p = vec3(pl.origin) + x * vec3(pl.up) + ((y * 1.2f - 0.5f) * vec3(pl.right));
+        if (insideSeedSurface(p, surface, pl)) {
+            seeds->push_back(p);
+            colors.push_back(vec4(0, 1, 0, 1));
+        }
+    }
+
+    std::default_random_engine generator;
     while (seeds->size() < numSeeds_.get()) {
         const float x = util::randomNumber<float>(generator);
         const float y = util::randomNumber<float>(generator);
