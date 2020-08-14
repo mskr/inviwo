@@ -39,6 +39,7 @@
 #define LINE 3
 #define SPHERE 4
 #define INTERACTIVE 5
+#define SURFACEMESH 6
 
 namespace inviwo {
 
@@ -54,6 +55,7 @@ const ProcessorInfo SeedPointGenerator::getProcessorInfo() const { return proces
 
 SeedPointGenerator::SeedPointGenerator()
     : Processor()
+    , seedSurface_("seedSurface")
     , seedPoints_("seedPoints")
     , lineGroup_("line", "Line")
     , planeGroup_("plane", "Plane")
@@ -84,6 +86,8 @@ SeedPointGenerator::SeedPointGenerator()
     , seedMin_("seedMin", "Seed Min", vec3(0), vec3(-1000), vec3(1000))
     , seedMax_("seedMax", "Seed Max", vec3(1), vec3(-1000), vec3(1000))
     , pickedSeed_("pickedSeed", "Seed", vec3(0), seedMin_.get(), seedMax_.get()) {
+    addPort(seedSurface_);
+    seedSurface_.setOptional(true);
     addPort(seedPoints_);
 
     generator_.addOption("random", "Random", RND);
@@ -91,6 +95,7 @@ SeedPointGenerator::SeedPointGenerator()
     generator_.addOption("plane", "Plane", PLANE);
     generator_.addOption("sphere", "Sphere", SPHERE);
     generator_.addOption("interactive", "Interactive", INTERACTIVE);
+    generator_.addOption("surfacemesh", "Surface Mesh", SURFACEMESH);
     generator_.setCurrentStateAsDefault();
     generator_.onChange([this]() { onGeneratorChange(); });
     addProperty(generator_);
@@ -160,6 +165,9 @@ void SeedPointGenerator::process() {
         case INTERACTIVE:
             seedPoints_.setData(std::make_shared<std::vector<vec3>>(1, pickedSeed_.get()));
             break;
+        case SURFACEMESH:
+            seedOnInputSurface();
+            break;
         default:
             LogWarn("No points generated since given type is not yet implemented");
             break;
@@ -171,8 +179,9 @@ void SeedPointGenerator::onGeneratorChange() {
     bool plane = generator_.get() == PLANE;
     bool line = generator_.get() == LINE;
     bool sphere = generator_.get() == SPHERE;
+    bool surfacemesh = generator_.get() == SURFACEMESH;
 
-    numberOfPoints_.setVisible(rnd || line || sphere);
+    numberOfPoints_.setVisible(rnd || line || sphere || surfacemesh);
 
     planeResolution_.setVisible(plane);
     planeOrigin_.setVisible(plane);
@@ -254,5 +263,205 @@ void SeedPointGenerator::randomPoints() {
     }
     seedPoints_.setData(points);
 }
+
+struct BoundedPlane {
+    dvec3 origin, up, right;
+};
+
+using Real = double;
+using Real3 = glm::dvec3;
+
+Real intersectPlaneBidirectional(Real3 pos, Real3 dir, Real3 middle, Real3 normal) {
+    const Real a = dot(dir, normal);
+    const Real b = dot(middle - pos, normal);
+    if (a >= 0.0 && b <= 0.0 || a <= 0.0 && b >= 0.0) return std::numeric_limits<Real>::infinity();
+    return b / a;
+}
+
+void SeedPointGenerator::seedOnInputSurface() {
+
+    auto pointMesh = [](std::shared_ptr<std::vector<vec3>> points, std::vector<vec4> color = {}) {
+        auto mesh = std::make_shared<Mesh>(DrawType::Points, ConnectivityType::None);
+
+        auto vertexRAM = std::make_shared<BufferRAMPrecision<vec3>>(points->size());
+        auto colorRAM = std::make_shared<BufferRAMPrecision<vec4>>(points->size());
+        auto radiiRAM = std::make_shared<BufferRAMPrecision<float>>(points->size());
+
+        mesh->addBuffer(Mesh::BufferInfo(BufferType::PositionAttrib),
+                        std::make_shared<Buffer<vec3>>(vertexRAM));
+        mesh->addBuffer(Mesh::BufferInfo(BufferType::ColorAttrib),
+                        std::make_shared<Buffer<vec4>>(colorRAM));
+        mesh->addBuffer(Mesh::BufferInfo(BufferType::RadiiAttrib),
+                        std::make_shared<Buffer<float>>(radiiRAM));
+
+        auto& vertices = vertexRAM->getDataContainer();
+        auto& colors = colorRAM->getDataContainer();
+        auto& radii = radiiRAM->getDataContainer();
+
+        auto& pointsRef = *points;
+        for (size_t i = 0; i < pointsRef.size(); i++) {
+            auto p = pointsRef[i];
+            vertices.push_back(p);
+            colors.push_back(color.size() > i ? color[i] : vec4(1));
+            radii.push_back(.1f);
+        }
+
+        return mesh;
+    };
+
+    auto meshGet = [](Mesh& mesh, BufferType buf) {
+        for (const auto b : mesh.getBuffers()) {
+            if (b.first.type == buf) return b.second->getRepresentation<BufferRAM>();
+        }
+    };
+
+    auto planeFromMesh = [&, meshGet, pointMesh](Mesh& mesh) {
+        BoundedPlane result;
+        auto verts = meshGet(mesh, BufferType::PositionAttrib);
+        dvec3 lower(std::numeric_limits<double>::infinity());
+        dvec3 upper(-std::numeric_limits<double>::infinity());
+        dvec3 xstart(std::numeric_limits<double>::infinity());
+        dvec3 xend(-std::numeric_limits<double>::infinity());
+        for (size_t i = 0; i < verts->getSize(); i++) {
+            auto v = verts->getAsDVec3(i);
+            if (v.y < lower.y) lower = v;
+            if (v.y > upper.y) upper = v;
+            if (v.x < xstart.x) xstart = v;
+            if (v.x > xend.x) xend = v;
+        }
+        if (glm::epsilonEqual(lower.y, upper.y, .0001)) {
+            lower = dvec3(std::numeric_limits<double>::infinity());
+            upper = dvec3(-std::numeric_limits<double>::infinity());
+            for (size_t i = 0; i < verts->getSize(); i++) {
+                auto v = verts->getAsDVec3(i);
+                if (v.z < lower.z) lower = v;
+                if (v.z > upper.z) upper = v;
+            }
+        }
+        if (glm::epsilonEqual(xstart.x, xend.x, .0001)) {
+            xstart = dvec3(std::numeric_limits<double>::infinity());
+            xend = dvec3(-std::numeric_limits<double>::infinity());
+            for (size_t i = 0; i < verts->getSize(); i++) {
+                auto v = verts->getAsDVec3(i);
+                if (v.z < xstart.z) xstart = v;
+                if (v.z > xend.z) xend = v;
+            }
+        }
+        result.up = upper - lower;
+        auto n = glm::normalize(glm::cross(glm::normalize(result.up), glm::normalize(xend - xstart)));
+        auto rightAxis = glm::normalize(glm::cross(glm::normalize(result.up), n));
+        dvec3 leftest = rightAxis * 100000.;
+        dvec3 rightest = rightAxis * (-100000.);
+        for (size_t i = 0; i < verts->getSize(); i++) {
+            auto v = verts->getAsDVec3(i);
+            auto projV = glm::dot(v, rightAxis);
+            if (projV < glm::dot(leftest, rightAxis)) leftest = v;
+            if (projV > glm::dot(rightest, rightAxis)) rightest = v;
+        }
+        result.right = rightest - leftest;
+        result.origin = lower;
+        return result;
+
+        /*auto pnts = std::make_shared<std::vector<vec3>>();
+        pnts->push_back(lower);
+        pnts->push_back(upper);
+        pnts->push_back(leftest);
+        pnts->push_back(rightest);
+        pnts->push_back(origin);
+        insideTest_.setData(
+            pointMesh(pnts, {vec4(1, 0, 0, 1), vec4(1), vec4(0, 1, 1, 1), vec4(0, 0, 1, 1),
+        vec4(1,1,0,1)}));*/
+    };
+
+    auto insideSeedSurface = [&](vec3 pos, Mesh& surface, BoundedPlane pl) {
+        bool result = false;
+
+        const auto buffers = surface.getBuffers();
+        const BufferRAM* vertices = 0;
+        const BufferRAM* normals = 0;
+        for (const auto buf : buffers) {
+            if (buf.first.type == BufferType::PositionAttrib) {
+                vertices = buf.second->getRepresentation<BufferRAM>();
+            }
+            if (buf.first.type == BufferType::NormalAttrib) {
+                normals = buf.second->getRepresentation<BufferRAM>();
+            }
+        }
+
+        if (vertices != 0 && normals != 0) {
+
+            const auto r0 = pl.origin - pl.up * 0.5;
+            const auto r1 = dvec3(pos);
+
+            const auto ray = r0;
+            const auto dir = glm::normalize(r1 - r0);
+
+            int isectCount = 0;
+
+            for (size_t i = 0; i < vertices->getSize(); i += 2) {
+                const auto v0 = (vertices->getAsDVec3(i));
+                const auto v1 = (vertices->getAsDVec3(i + 1));
+
+                const auto normal = normals->getAsDVec3(i);
+                const auto middle = v0;
+
+                auto t = intersectPlaneBidirectional(ray, dir, middle, normal);
+                if (t < 0) continue;
+
+                const auto isect = ray + t * dir;
+
+                if (isect.x >= std::min(v0.x, v1.x) && isect.x <= std::max(v0.x, v1.x) &&
+                    isect.y >= std::min(v0.y, v1.y) && isect.y <= std::max(v0.y, v1.y) &&
+                    isect.x >= std::min(r0.x, r1.x) && isect.x <= std::max(r0.x, r1.x) &&
+                    isect.y >= std::min(r0.y, r1.y) && isect.y <= std::max(r0.y, r1.y)) {
+                    isectCount++;
+                }
+            }
+
+            result = isectCount % 2 != 0;
+        }
+        return result;
+    };
+
+    if (!seedSurface_.hasData()) {
+        LogWarn("No Seed Surface in Inport.");
+        return;
+    }
+
+    auto surface = *seedSurface_.getData();
+    BoundedPlane pl = planeFromMesh(surface);
+
+    auto seeds = std::make_shared<std::vector<vec3>>();
+    std::vector<vec4> colors;
+
+    size_t gridSize = 1;
+    while (gridSize * gridSize < numberOfPoints_.get()) gridSize++;
+
+    for (size_t i = 0; i < numberOfPoints_.get(); i++) {
+        float x = (float)(i % gridSize) / (float)gridSize;
+        float y = (float)(i / gridSize) / (float)gridSize;
+        const auto p = vec3(pl.origin) + x * vec3(pl.up) + ((y * 1.2f - 0.5f) * vec3(pl.right));
+        if (insideSeedSurface(p, surface, pl)) {
+            seeds->push_back(p);
+            colors.push_back(vec4(0, 1, 0, 1));
+        }
+    }
+
+    size_t tries = 0;
+
+    std::default_random_engine generator;
+    while (seeds->size() < numberOfPoints_.get()) {
+        const float x = util::randomNumber<float>(generator);
+        const float y = util::randomNumber<float>(generator);
+        const auto p = vec3(pl.origin) + x * vec3(pl.up) + ((y * 1.2f - 0.5f) * vec3(pl.right));
+        if (insideSeedSurface(p, surface, pl)) {
+            seeds->push_back(p);
+            colors.push_back(vec4(0, 1, 0, 1));
+        }
+        if (tries++ > numberOfPoints_.get() * 2) break;
+    }
+
+    seedPoints_.setData(seeds);
+};
 
 }  // namespace inviwo

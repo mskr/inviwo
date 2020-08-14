@@ -61,6 +61,7 @@ public:
     void onGeneratorChange();
 
 private:
+    MeshInport seedSurface_;
     SeedPoints3DOutport seedPoints_;
 
     CompositeProperty lineGroup_;
@@ -105,6 +106,8 @@ private:
     FloatVec3Property pickedSeed_;
 
     void processPickEvent(Event* e);
+
+    void seedOnInputSurface();
 };
 
 }  // namespace inviwo

@@ -220,6 +220,7 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     , insideTest_("insideTest")
     , streamlineSeeds_("streamlineSeeds")
     , file_("filename", "File")
+    , rescale_("rescale", "Rescale", true)
     , readButton_("readButton", "Read")
     , seedButton_("seedButton", "Seed on Input Surface")
     , numSeeds_("numSeeds", "Seedpoints", 10, 1, 1000)
@@ -257,8 +258,8 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     addPort(insideTest_);
     addPort(streamlineSeeds_);
 
-    addProperties(file_, readButton_, seedButton_, numSeeds_, subgroupSelector_, pointcloudVis_,
-                  spaceStats_, interactive_);
+    addProperties(file_, rescale_, readButton_, seedButton_, numSeeds_, subgroupSelector_,
+                  pointcloudVis_, spaceStats_, interactive_);
 
     pointcloudVis_.addProperties(pointSize_, velocityScaling_);
 
@@ -312,6 +313,8 @@ AnsysFieldReader3D::AnsysFieldReader3D()
         velocityScaling_.setMinValue(-2.f);
         velocityScaling_.setMaxValue(2.f);
     });
+
+    subgroupSelector_.addOption("all", "All", -1);
 
     subgroupSelector_.onChange([&]() {
         pointCloud_.setData(pointCloudToMesh3D(pointcloud));
@@ -428,7 +431,8 @@ void AnsysFieldReader3D::process() {
 }
 
 void AnsysFieldReader3D::createSampler(const Mesh& boundaries) {
-    velocitySampler = std::make_shared<PointCloudVelocitySampler>(pointcloud, boundaries);
+    velocitySampler =
+        std::make_shared<PointCloudVelocitySampler>(pointcloud, boundaries, rescale_.get());
 
     pointCloudMin_.set(velocitySampler->pointCloudAABB.min);
     pointCloudMax_.set(velocitySampler->pointCloudAABB.max);
@@ -480,10 +484,10 @@ void AnsysFieldReader3D::seedOnInputSurface() {
     auto planeFromMesh = [&, meshGet, pointMesh](Mesh& mesh) {
         BoundedPlane result;
         auto verts = meshGet(mesh, BufferType::PositionAttrib);
-        dvec3 lower(0, std::numeric_limits<double>::infinity(), 0);
-        dvec3 upper(0, -std::numeric_limits<double>::infinity(), 0);
-        dvec3 xstart(std::numeric_limits<double>::infinity(), 0, 0);
-        dvec3 xend(-std::numeric_limits<double>::infinity(), 0, 0);
+        dvec3 lower(std::numeric_limits<double>::infinity());
+        dvec3 upper(-std::numeric_limits<double>::infinity());
+        dvec3 xstart(std::numeric_limits<double>::infinity());
+        dvec3 xend(-std::numeric_limits<double>::infinity());
         for (size_t i = 0; i < verts->getSize(); i++) {
             auto v = verts->getAsDVec3(i);
             if (v.y < lower.y) lower = v;
@@ -491,11 +495,29 @@ void AnsysFieldReader3D::seedOnInputSurface() {
             if (v.x < xstart.x) xstart = v;
             if (v.x > xend.x) xend = v;
         }
+        if (glm::epsilonEqual(lower.y, upper.y, .0001)) {
+            lower = dvec3(std::numeric_limits<double>::infinity());
+            upper = dvec3(-std::numeric_limits<double>::infinity());
+            for (size_t i = 0; i < verts->getSize(); i++) {
+                auto v = verts->getAsDVec3(i);
+                if (v.z < lower.z) lower = v;
+                if (v.z > upper.z) upper = v;
+            }
+        }
+        if (glm::epsilonEqual(xstart.x, xend.x, .0001)) {
+            xstart = dvec3(std::numeric_limits<double>::infinity());
+            xend = dvec3(-std::numeric_limits<double>::infinity());
+            for (size_t i = 0; i < verts->getSize(); i++) {
+                auto v = verts->getAsDVec3(i);
+                if (v.z < xstart.z) xstart = v;
+                if (v.z > xend.z) xend = v;
+            }
+        }
         result.up = upper - lower;
-        auto n = glm::cross(result.up, xend - xstart);
-        auto rightAxis = glm::normalize(glm::cross(result.up, n));
-        dvec3 leftest = rightAxis * (std::numeric_limits<double>::infinity());
-        dvec3 rightest = rightAxis * (-std::numeric_limits<double>::infinity());
+        auto n = glm::normalize(glm::cross(glm::normalize(result.up), glm::normalize(xend - xstart)));
+        auto rightAxis = glm::normalize(glm::cross(glm::normalize(result.up), n));
+        dvec3 leftest = rightAxis * 100000.;
+        dvec3 rightest = rightAxis * (-100000.);
         for (size_t i = 0; i < verts->getSize(); i++) {
             auto v = verts->getAsDVec3(i);
             auto projV = glm::dot(v, rightAxis);
@@ -591,6 +613,8 @@ void AnsysFieldReader3D::seedOnInputSurface() {
         }
     }
 
+    size_t tries = 0;
+
     std::default_random_engine generator;
     while (seeds->size() < numSeeds_.get()) {
         const float x = util::randomNumber<float>(generator);
@@ -600,6 +624,7 @@ void AnsysFieldReader3D::seedOnInputSurface() {
             seeds->push_back(p);
             colors.push_back(vec4(0, 1, 0, 1));
         }
+        if (tries++ > numSeeds_.get() * 2) break;
     }
 
     streamlineSeeds_.setData(seeds);

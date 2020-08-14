@@ -138,7 +138,8 @@ struct PointCloudVelocitySampler : public SpatialSampler<3, 3, double> {
     AABB meshAABB;
     vec3 meshSizeFactor;
 
-    PointCloudVelocitySampler(SimData3D::PointCloud& pointcloud, const Mesh& boundaries)
+    PointCloudVelocitySampler(SimData3D::PointCloud& pointcloud, const Mesh& boundaries,
+                              bool rescale = true)
         : SpatialSampler<3, 3, double>(pointcloud)
         , boundaries(boundaries)
         , pointcloud(pointcloud)
@@ -155,13 +156,16 @@ struct PointCloudVelocitySampler : public SpatialSampler<3, 3, double> {
         const auto pointcloudHeight = pointCloudAABB.max.y - pointCloudAABB.min.y;
         const auto pointcloudDepth = pointCloudAABB.max.z - pointCloudAABB.min.z;
 
-        meshSizeFactor = vec3(meshWidth / pointcloudWidth, meshHeight / pointcloudHeight,
-                              meshDepth / pointcloudDepth);
+        if (rescale) {
+
+            meshSizeFactor = vec3(meshWidth / pointcloudWidth, meshHeight / pointcloudHeight,
+                                  meshDepth / pointcloudDepth);
+        }
 
         // pointcloud.setModelMatrix(glm::scale(vec3(meshSizeFactor, 1)));
 
         for (size_t i = 0; i < pointcloud.points.size(); i++) {
-            pointcloud.points[i] = pointcloud.points[i] * meshSizeFactor;
+            if (rescale) pointcloud.points[i] = pointcloud.points[i] * meshSizeFactor;
 
             kdtree.insert(pointcloud.points[i], (int)i);
         }
@@ -322,6 +326,7 @@ protected:
     SeedPoints3DOutport streamlineSeeds_;
 
     FileProperty file_;
+    BoolProperty rescale_;
     ButtonProperty readButton_;
     ButtonProperty seedButton_;
     IntSizeTProperty numSeeds_;
