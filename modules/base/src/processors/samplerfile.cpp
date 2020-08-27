@@ -254,6 +254,8 @@ std::shared_ptr<inviwo::Image> read(const std::string file, const std::string qu
             
         }
     }
+
+    return image;
 }
 }  // namespace reading
 
