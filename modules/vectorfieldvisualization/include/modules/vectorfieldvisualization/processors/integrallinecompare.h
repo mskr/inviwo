@@ -53,6 +53,7 @@
 #include <modules/vectorfieldvisualization/datastructures/integrallineset.h>
 #include <inviwo/core/datastructures/geometry/typedmesh.h>
 #include <inviwo/core/datastructures/geometry/basicmesh.h>
+#include <inviwo/core/util/spatialsampler.h>
 
 namespace inviwo {
 
@@ -74,19 +75,36 @@ struct BridgeFace {
 
 struct LinePair {
     IntegralLine l1, l2;
-    LinePair(IntegralLine l1, IntegralLine l2) : l1(l1), l2(l2) {}
+    std::vector<float> scalars1, scalarsFrom1To2, scalars2, scalarsFrom2To1;
+    LinePair(IntegralLine l1, IntegralLine l2, std::vector<float> scalars1,
+             std::vector<float> scalarsFrom1To2, std::vector<float> scalars2,
+             std::vector<float> scalarsFrom2To1)
+        : l1(l1)
+        , l2(l2)
+        , scalars1(scalars1)
+        , scalarsFrom1To2(scalarsFrom1To2)
+        , scalars2(scalars2)
+        , scalarsFrom2To1(scalarsFrom2To1) {}
     bool bothExist() { return !l1.getPositions().empty() && !l2.getPositions().empty(); }
     LinePair lastPart(size_t from) {
         IntegralLine result1;
         IntegralLine result2;
+        std::vector<float> scalars1end, scalarsFrom1To2end, scalars2end, scalarsFrom2To1end;
         auto size = std::max(l1.getPositions().size(), l2.getPositions().size());
         for (size_t i = from; i < size; i++) {
-            if (i < l1.getPositions().size())
+            if (i < l1.getPositions().size()) {
                 result1.getPositions().emplace_back(l1.getPositions()[i]);
-            if (i < l2.getPositions().size())
+                scalars1end.push_back(scalars1[i]);
+                scalarsFrom1To2end.push_back(scalarsFrom1To2[i]);
+            }
+            if (i < l2.getPositions().size()) {
                 result2.getPositions().emplace_back(l2.getPositions()[i]);
+                scalars2end.push_back(scalars2[i]);
+                scalarsFrom2To1end.push_back(scalarsFrom2To1[i]);
+            }
         }
-        return LinePair(result1, result2);
+        return LinePair(result1, result2, scalars1end, scalarsFrom1To2end, scalars2end,
+                        scalarsFrom2To1end);
     }
     MeanLine meanLineUntil(float splitThreshold) {
         MeanLine result;
@@ -102,6 +120,7 @@ struct LinePair {
                 result.isPairDiverged = true;
 
                 if (i > 0) {
+                    // formula
                     dvec3 prevMean = (p1[i - 1] + p2[i - 1]) / 2.0;
                     float d_prev = static_cast<float>(glm::distance(p1[i - 1], prevMean));
                     auto interpolatedMean =
@@ -199,6 +218,9 @@ public:
     static const ProcessorInfo processorInfo_;
 
 private:
+    DataInport<SpatialSampler<3, 3, double>, 1> velocitySampler_;
+    DataInport<SpatialSampler<3, 1, double>, 1> scalarSampler1_;
+    DataInport<SpatialSampler<3, 1, double>, 1> scalarSampler2_;
     IntegralLineSetInport lines1_;
     IntegralLineSetInport lines2_;
     IntegralLineSetOutport out_;
@@ -206,14 +228,28 @@ private:
     MeshOutport podMesh_;
     DataOutport<std::vector<vec4>> colors_;
 
-    enum class SeverenessMetric { Runlength, RunlengthUntilDiverged, ThicknessSum, LengthAndThickness };
+    enum class SeverenessMetric {
+        Runlength,
+        RunlengthUntilDiverged,
+        ThicknessSum,
+        LengthAndThickness
+    };
 
     FloatProperty matchTolerance_;
     BoolProperty noTriples_;
     BoolProperty tubes_;
-    FloatProperty splitThreshold_;
+    BoolProperty referenceStreamlines_;
+
+    CompositeProperty referenceVis_;
+    FloatProperty radiusScaling_;
+    FloatProperty minRadius_;
+    FloatProperty maxRadius_;
+    ButtonProperty precompute_;
+    BoolProperty compareMagnitude_;
+    BoolProperty compareDirection_;
 
     CompositeProperty diverged_;
+    FloatProperty splitThreshold_;
     FloatProperty podSize_;
     FloatVec4Property podColor_;
     FloatVec4Property earlyEndColor_;
@@ -224,11 +260,16 @@ private:
     IntSizeTProperty severityFilter_;
 
     CompositeProperty colorMaps_;
+    BoolProperty enableThickness_;
     TransferFunctionProperty thickness_;
     BoolProperty enableRunlength_;
     TransferFunctionProperty runlength_;
-    BoolProperty enableWallDistance_;
-    TransferFunctionProperty wallDistance_;
+    BoolProperty enableScalar1_;
+    TransferFunctionProperty scalar1_;
+    BoolProperty enableScalar2_;
+    TransferFunctionProperty scalar2_;
+    BoolProperty enableScalarDiff_;
+    TransferFunctionProperty scalarDiff_;
 
     float severeness(MeanLine line);
 
@@ -236,13 +277,12 @@ private:
         float v, min, max;
     };
 
-    vec4 colorMapping(BoundedFloat thickness, BoundedFloat runlength,
-                      BoundedFloat wallDistance = {0.f, 0.f, 0.f});
+    vec4 colorMapping(BoundedFloat scalar1, BoundedFloat scalar2, BoundedFloat thickness,
+                      BoundedFloat runlength = {0.f, 0.f, 0.f});
 
-    using MyLineMesh =
-        TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
-                  buffertraits::NormalBuffer, buffertraits::ColorsBuffer,
-                  buffertraits::TexcoordBuffer<3>>;
+    using MyLineMesh = TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
+                                 buffertraits::NormalBuffer, buffertraits::ColorsBuffer,
+                                 buffertraits::TexcoordBuffer<3>>;
 
     void tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<dvec3> vertices,
                  std::function<float(int)> radius, std::function<vec4(int)> color,
@@ -250,6 +290,13 @@ private:
 
     void podGfx(std::shared_ptr<BasicMesh> mesh, vec3 pos, float radius, vec4 color);
 
+    std::vector<std::vector<float>> deviationsMagnitude_;  // for reference streamline vis
+    std::vector<std::vector<float>> deviationsDirection_;
+
+    std::vector<std::vector<float>> scalarsLineSet1_;
+    std::vector<std::vector<float>> scalarsLineSetFrom1To2_;
+    std::vector<std::vector<float>> scalarsLineSet2_;
+    std::vector<std::vector<float>> scalarsLineSetFrom2To1_;
 };
 
 }  // namespace inviwo

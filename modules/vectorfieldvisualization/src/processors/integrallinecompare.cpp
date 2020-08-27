@@ -48,6 +48,9 @@ const ProcessorInfo IntegralLineCompare::processorInfo_{
 
 IntegralLineCompare::IntegralLineCompare()
     : Processor()
+    , velocitySampler_("velocitySampler")
+    , scalarSampler1_("scalarSampler1")
+    , scalarSampler2_("scalarSampler2")
     , lines1_("lines1")
     , lines2_("lines2")
     , out_("out")
@@ -57,8 +60,16 @@ IntegralLineCompare::IntegralLineCompare()
     , matchTolerance_("matchTolerance", "Match Tolerance", 0.3f, 0.0f, 0.3f)
     , noTriples_("noTriples", "No Triples")
     , tubes_("tubes", "Tubes")
-    , splitThreshold_("splitThreshold", "Split Threshold")
+    , referenceStreamlines_("referenceStreamlines", "Reference Streamlines")
+    , referenceVis_("referenceVis", "Reference Streamines")
+    , radiusScaling_("radiusScaling", "Radius Scaling")
+    , minRadius_("minRadius", "Min Radius")
+    , maxRadius_("maxRadius", "Max Radius")
+    , precompute_("precompute", "Precompute")
+    , compareMagnitude_("compareMagnitude", "Compare Magnitude")
+    , compareDirection_("compareDirection", "Compare Direction")
     , diverged_("diverged", "Diverged Lines, Point of Divergence")
+    , splitThreshold_("splitThreshold", "Split Threshold")
     , podSize_("podSize", "POD Size", .1f, 0.f, 1.f)
     , podColor_("podColor", "POD Color", vec4(1.0f, 1.0f, 1.0f, 1.0f), vec4(0.0f), vec4(1.0f),
                 vec4(0.01f), InvalidationLevel::InvalidOutput, PropertySemantics::Color)
@@ -70,6 +81,7 @@ IntegralLineCompare::IntegralLineCompare()
     , severityMetric_("severityMetric", "Metric")
     , severityFilter_("severityFilter", "Filter", 1000, 1, 1000)
     , colorMaps_("colorMaps", "Colormaps")
+    , enableThickness_("enableThickness", "Enable Thickness")
     , thickness_("thickness", "Thickness",
                  TransferFunction({{0.0f, vec4(0.0f, 0.1f, 1.0f, 1.0f)},
                                    {1.0f, vec4(1.0f, 0.03f, 0.03f, 1.0f)}}))
@@ -77,10 +89,21 @@ IntegralLineCompare::IntegralLineCompare()
     , runlength_("runlength", "Runlength",
                  TransferFunction({{0.0f, vec4(0.0f, 0.1f, 1.0f, 1.0f)},
                                    {1.0f, vec4(1.0f, 0.03f, 0.03f, 1.0f)}}))
-    , enableWallDistance_("enableWallDistance", "Enable Wall Distance")
-    , wallDistance_("wallDistance", "Wall Distance",
-                    TransferFunction({{0.0f, vec4(0.0f, 0.1f, 1.0f, 1.0f)},
-                                      {1.0f, vec4(1.0f, 0.03f, 0.03f, 1.0f)}})) {
+    , enableScalar1_("enableScalar1", "Enable Scalar 1")
+    , scalar1_("scalar1", "Scalar 1",
+               TransferFunction(
+                   {{0.0f, vec4(0.0f, 0.1f, 1.0f, 1.0f)}, {1.0f, vec4(1.0f, 0.03f, 0.03f, 1.0f)}}))
+    , enableScalar2_("enableScalar2", "Enable Scalar 2")
+    , scalar2_("scalar2", "Scalar 2",
+               TransferFunction(
+                   {{0.0f, vec4(0.0f, 0.1f, 1.0f, 1.0f)}, {1.0f, vec4(1.0f, 0.03f, 0.03f, 1.0f)}}))
+    , enableScalarDiff_("enableScalarDiff", "Enable Scalar Diff")
+    , scalarDiff_("scalarDiff", "Scalar Diff",
+                  TransferFunction({{0.0f, vec4(0.0f, 0.1f, 1.0f, 1.0f)},
+                                    {1.0f, vec4(1.0f, 0.03f, 0.03f, 1.0f)}})) {
+    addPort(velocitySampler_);
+    addPort(scalarSampler1_);
+    addPort(scalarSampler2_);
     addPort(lines1_);
     addPort(lines2_);
     addPort(out_);
@@ -88,13 +111,15 @@ IntegralLineCompare::IntegralLineCompare()
     addPort(podMesh_);
     addPort(colors_);
 
-    addProperties(matchTolerance_, noTriples_, tubes_, splitThreshold_, diverged_, severity_,
-                  colorMaps_);
-    diverged_.addProperties(podSize_, podColor_, earlyEndColor_, divergedLines_);
+    addProperties(matchTolerance_, noTriples_, tubes_, referenceStreamlines_, referenceVis_,
+                  diverged_, severity_, colorMaps_);
+    referenceVis_.addProperties(radiusScaling_, minRadius_, maxRadius_, precompute_,
+                                compareMagnitude_, compareDirection_);
+    diverged_.addProperties(splitThreshold_, podSize_, podColor_, earlyEndColor_, divergedLines_);
     severity_.addProperties(severityMetric_, severityFilter_);
 
-    colorMaps_.addProperties(thickness_, enableRunlength_, runlength_, enableWallDistance_,
-                             wallDistance_);
+    colorMaps_.addProperties(enableScalar1_, scalar1_, enableScalar2_, scalar2_, enableScalarDiff_,
+                             scalarDiff_, enableThickness_, thickness_, enableRunlength_, runlength_);
 
     severityMetric_.addOption("runlength", "Runlength", SeverenessMetric::Runlength);
     severityMetric_.addOption("runlengthUntilDiverged", "Runlength Until Diverged",
@@ -106,9 +131,142 @@ IntegralLineCompare::IntegralLineCompare()
     severityMetric_.setCurrentStateAsDefault();
 
     runlength_.setReadOnly(!enableRunlength_);
-    wallDistance_.setReadOnly(!enableWallDistance_);
+    scalar1_.setReadOnly(!enableScalar1_);
+    scalar2_.setReadOnly(!enableScalar2_);
+    scalarDiff_.setReadOnly(!enableScalarDiff_);
     enableRunlength_.onChange([&]() { runlength_.setReadOnly(!enableRunlength_); });
-    enableWallDistance_.onChange([&]() { wallDistance_.setReadOnly(!enableWallDistance_); });
+    enableScalar1_.onChange([&]() { scalar1_.setReadOnly(!enableScalar1_); });
+    enableScalar2_.onChange([&]() { scalar2_.setReadOnly(!enableScalar2_); });
+    enableScalarDiff_.onChange([&]() { scalarDiff_.setReadOnly(!enableScalarDiff_); });
+
+    auto sampleAlongRefLines = [&]() {
+        if (!lines1_.hasData()) return;
+        if (!velocitySampler_.hasData()) return;
+        const auto sampler = velocitySampler_.getData();
+        deviationsMagnitude_.clear();
+        deviationsDirection_.clear();
+        const auto set1 = *lines1_.getData();
+        float maxDeviationMagnitude = .0f;
+        for (const auto& refLine : set1.getVector()) {
+            const auto& positions = refLine.getPositions();
+            const auto& velocities = refLine.getMetaData<dvec3>("velocity");
+
+            std::vector<dvec3> otherVelocities;
+
+            std::vector<float> deviationsMagnitude;
+            std::vector<float> deviationsDirection;
+
+            for (size_t i = 0; i < positions.size(); i++) {
+
+                otherVelocities.push_back(sampler->sample(positions[i]));
+
+                // formula
+                auto d = glm::abs(glm::length(otherVelocities[i]) - glm::length(velocities[i]));
+
+                deviationsMagnitude.push_back(d);
+                if (d > maxDeviationMagnitude) maxDeviationMagnitude = d;
+            }
+
+            for (size_t i = 0; i < positions.size(); i++) {
+                // formula
+                deviationsDirection.push_back(
+                    1.f - .5f * (1.f + glm::dot(glm::normalize(otherVelocities[i]),
+                                                glm::normalize(velocities[i]))));
+            }
+
+            deviationsMagnitude_.push_back(deviationsMagnitude);
+            deviationsDirection_.push_back(deviationsDirection);
+        }
+
+        maxRadius_.setMaxValue(maxDeviationMagnitude);
+
+        for (size_t l = 0; l < set1.getVector().size(); l++) {
+            for (size_t i = 0; i < set1.getVector()[l].getPositions().size(); i++) {
+                deviationsMagnitude_[l][i] /= maxDeviationMagnitude;
+            }
+        }
+    };
+
+    precompute_.onChange(sampleAlongRefLines);
+    velocitySampler_.onChange(sampleAlongRefLines);
+
+    scalarSampler1_.onChange([&]() {
+        if (!scalarSampler1_.hasData()) return;
+        auto sampler = scalarSampler1_.getData();
+        scalarsLineSet1_.clear();
+        scalarsLineSetFrom2To1_.clear();
+        if (lines1_.hasData()) {
+            const auto set1 = *lines1_.getData();
+            float max = .0f;
+            for (auto l : set1.getVector()) {
+                auto positions = l.getPositions();
+                std::vector<float> scalars;
+                for (auto p : positions) {
+                    auto s = sampler->sample(p);
+                    scalars.push_back(s);
+                    if (s > max) max = s;
+                }
+                scalarsLineSet1_.push_back(scalars);
+            }
+            for (auto& scalars : scalarsLineSet1_)
+                for (auto& s : scalars) s /= max;
+        }
+        if (lines2_.hasData()) {
+            const auto set2 = *lines2_.getData();
+            float max = .0f;
+            for (auto l : set2.getVector()) {
+                auto positions = l.getPositions();
+                std::vector<float> scalars;
+                for (auto p : positions) {
+                    auto s = sampler->sample(p);
+                    scalars.push_back(s);
+                    if (s > max) max = s;
+                }
+                scalarsLineSetFrom2To1_.push_back(scalars);
+            }
+            for (auto& scalars : scalarsLineSetFrom2To1_)
+                for (auto& s : scalars) s /= max;
+        }
+    });
+
+    scalarSampler2_.onChange([&]() {
+        if (!scalarSampler2_.hasData()) return;
+        auto sampler = scalarSampler2_.getData();
+        scalarsLineSet2_.clear();
+        scalarsLineSetFrom1To2_.clear();
+        if (lines2_.hasData()) {
+            const auto set2 = *lines2_.getData();
+            float max = .0f;
+            for (auto l : set2.getVector()) {
+                auto positions = l.getPositions();
+                std::vector<float> scalars;
+                for (auto p : positions) {
+                    auto s = sampler->sample(p);
+                    scalars.push_back(s);
+                    if (s > max) max = s;
+                }
+                scalarsLineSet2_.push_back(scalars);
+            }
+            for (auto& scalars : scalarsLineSet2_)
+                for (auto& s : scalars) s /= max;
+        }
+        if (lines1_.hasData()) {
+            const auto set1 = *lines1_.getData();
+            float max = .0f;
+            for (auto l : set1.getVector()) {
+                auto positions = l.getPositions();
+                std::vector<float> scalars;
+                for (auto p : positions) {
+                    auto s = sampler->sample(p);
+                    scalars.push_back(s);
+                    if (s > max) max = s;
+                }
+                scalarsLineSetFrom1To2_.push_back(scalars);
+            }
+            for (auto& scalars : scalarsLineSetFrom1To2_)
+                for (auto& s : scalars) s /= max;
+        }
+    });
 }
 
 void IntegralLineCompare::process() {
@@ -119,143 +277,221 @@ void IntegralLineCompare::process() {
     auto mesh = std::make_shared<MyLineMesh>();
     auto podMesh = std::make_shared<BasicMesh>();
 
-    auto distance = [](IntegralLine l1, IntegralLine l2) {
-        float sum = .0f;
-        for (int i = 0; i < 1; i++)
-            sum += glm::distance(l1.getPositions()[i], l2.getPositions()[i]);
-        return sum;
-    };
+    if (referenceStreamlines_) {
 
-    if (set1.size() != set2.size()) LogWarn("Comparing sets with different number of lines");
+        // This is an alternative visualization.
+        // It avoids error accumulation along streamlines.
+        // Error accumulation is a problem when comparing two lines,
+        // because noise at a single location in one flow field influences
+        // the error against the other field for all following locations along the streamline.
+        // Here we take only streamlines in the reference flow field.
+        // At each point of a reference line, the other field is sampled and a local independent
+        // error is computed.
 
-    std::vector<vec4> colormap;
-    float colorstep = 1.f / set2.size();
-    for (int i = 0; i < set2.size(); i++) {
-        colormap.push_back(vec4(color::hsv2rgb(vec3(colorstep * i, 1.f, 1.f)), 1.f));
-    }
-
-    // Find pairs
-
-    std::vector<LinePair> pairs;
-    size_t numNoMatch = 0, numAlreadyMatched = 0, numPairs = 0;
-    std::vector<size_t> taken;
-
-    for (size_t li = 0; li < set1.size(); li++) {
-        auto l = set1.getVector()[li];
-        float minDist = std::numeric_limits<float>::infinity();
-        size_t matchedIdx = 0;
-        for (size_t i = 0; i < set2.size(); i++) {
-            float d = distance(l, set2[i]);
-            if (d < minDist) {
-                minDist = d;
-                matchedIdx = i;
-            }
-        }
-        if (std::find(taken.begin(), taken.end(), matchedIdx) < taken.end()) {
-            if (noTriples_) {
-                numAlreadyMatched++;
-                continue;
-            }
-        }
-        if (minDist > matchTolerance_) {
-            numNoMatch++;
-            continue;
-        }
-        taken.push_back(matchedIdx);
-
-        numPairs++;
-
-        auto l_match = set2[matchedIdx];
-
-        util::error(l, l_match);
-
-        if (tubes_) {
-            LinePair pair(l, l_match);
-            pairs.push_back(pair);
-        } else {
-            resultSet->push_back(l, matchedIdx);
-            resultSet->push_back(l_match, matchedIdx);
-            colors->push_back(colormap[matchedIdx]);
-            colors->push_back(colormap[matchedIdx]);
-        }
-    }
-
-    LogInfo("Pairwise comparison: " << numNoMatch << " lines have no match, " << numAlreadyMatched
-                                    << " lines found a match that was already taken, " << numPairs
-                                    << " pairs found.");
-
-    // Compute mean lines and property ranges
-
-    std::vector<MeanLine> means;
-    float minDeviation = std::numeric_limits<float>::infinity(), maxDeviation = 0.0f;
-    float minRunlength = std::numeric_limits<float>::infinity(), maxRunlength = 0.0f;
-    float minWallDistance = std::numeric_limits<float>::infinity(), maxWallDistance = 0.0f;
-
-    for (LinePair& pair : pairs) {
-        MeanLine mean = pair.meanLineUntil(splitThreshold_.get());
-
-        for (const auto d : mean.deviations) {
-            if (d < minDeviation) minDeviation = d;
-            if (d > maxDeviation) maxDeviation = d;
+        if (!velocitySampler_.hasData()) {
+            LogWarn(
+                "Need sampler of the other flow field to sample along the reference streamlines.");
+            return;
         }
 
-        auto l = mean.line.getLength();
-        if (l < minRunlength) minRunlength = l;
-        if (l > maxRunlength) maxRunlength = l;
+        if (deviationsMagnitude_.size() < set1.getVector().size()) {
+            LogWarn("Please precompute.");
+            return;
+        }
 
-        means.push_back(mean);
-    }
-
-    severityFilter_.setMaxValue(numPairs);
-
-    std::sort(means.begin(), means.end(),
-              [&](MeanLine a, MeanLine b) { return severeness(a) > severeness(b); });
-
-    // Create mesh to render
-
-    for (size_t i = 0; i < severityFilter_.get(); i++) {
-        MeanLine mean = means[i];
-
-        if (mean.pair->bothExist()) {
+        for (size_t i = 0; i < set1.getVector().size(); i++) {
+            const auto& positions = set1.getVector()[i].getPositions();
 
             tubeGfx(
-                mesh, mean.line.getPositions(), [&](int i) { return mean.deviations[i]; },
-                [&](int i) {
-                    return colorMapping({mean.deviations[i], minDeviation, maxDeviation},
-                                        {(float)mean.line.getLength(), minRunlength, maxRunlength});
+                mesh, positions,
+                [&](int ii) {
+                    float r = .0f;
+                    float max = .0f;
+
+                    // formula
+                    if (compareMagnitude_) {
+                        r += deviationsMagnitude_[i][ii];
+                        max += 1.f;
+                    }
+                    if (compareDirection_) {
+                        r += deviationsDirection_[i][ii];
+                        max += 1.f;
+                    }
+                    if (r == .0f)
+                        r = radiusScaling_.get();
+                    else
+                        r = r / max * radiusScaling_.get();
+                    return glm::clamp(r, minRadius_.get(), maxRadius_.get());
                 },
-                [](int i) { return vec3(0); });
+                [&](int ii) {
+                    float r = .0f;
+                    float max = .0f;
+                    if (compareMagnitude_) {
+                        r += deviationsMagnitude_[i][ii];
+                        max += 1.f;
+                    }
+                    if (compareDirection_) {
+                        r += deviationsDirection_[i][ii];
+                        max += 1.f;
+                    }
+                    if (r == .0f)
+                        r = radiusScaling_.get();
+                    else
+                        r = r / max * radiusScaling_.get();
+                    return colorMapping({scalarsLineSet1_[i][ii], 0, 1},
+                                        {scalarsLineSetFrom1To2_[i][ii], 0, 1},
+                                        {r, 0, radiusScaling_.get()});
+                },
+                [](int ii) { return vec3(0); });
+        }
+    } else {
 
-            BridgeFace bridge = mean.pair->bridgeFace();
-            if (bridge.l1Normals.size() != mean.pair->l1.getPositions().size()) {
-                LogWarn("Bridge l1 normals " << bridge.l1Normals.size() << " instead of "
-                                             << mean.pair->l1.getPositions().size());
+        // Here starts the original visualization.
+
+        auto distance = [](IntegralLine l1, IntegralLine l2) {
+            float sum = .0f;
+            for (int i = 0; i < 1; i++)
+                sum += glm::distance(l1.getPositions()[i], l2.getPositions()[i]);
+            return sum;
+        };
+
+        if (set1.size() != set2.size()) LogWarn("Comparing sets with different number of lines");
+
+        std::vector<vec4> colormap;
+        float colorstep = 1.f / set2.size();
+        for (int i = 0; i < set2.size(); i++) {
+            colormap.push_back(vec4(color::hsv2rgb(vec3(colorstep * i, 1.f, 1.f)), 1.f));
+        }
+
+        // Find pairs
+
+        std::vector<LinePair> pairs;
+        size_t numNoMatch = 0, numAlreadyMatched = 0, numPairs = 0;
+        std::vector<size_t> taken;
+
+        for (size_t li = 0; li < set1.size(); li++) {
+            auto l = set1.getVector()[li];
+            float minDist = std::numeric_limits<float>::infinity();
+            size_t matchedIdx = 0;
+            for (size_t i = 0; i < set2.size(); i++) {
+                float d = distance(l, set2[i]);
+                if (d < minDist) {
+                    minDist = d;
+                    matchedIdx = i;
+                }
             }
-            if (bridge.l2Normals.size() != mean.pair->l2.getPositions().size()) {
-                LogWarn("Bridge l2 normals " << bridge.l2Normals.size() << " instead of "
-                                             << mean.pair->l2.getPositions().size());
+            if (std::find(taken.begin(), taken.end(), matchedIdx) < taken.end()) {
+                if (noTriples_) {
+                    numAlreadyMatched++;
+                    continue;
+                }
+            }
+            if (minDist > matchTolerance_) {
+                numNoMatch++;
+                continue;
+            }
+            taken.push_back(matchedIdx);
+
+            numPairs++;
+
+            auto l_match = set2[matchedIdx];
+
+            util::error(l, l_match);
+
+            if (tubes_) {
+                LinePair pair(l, l_match, scalarsLineSet1_[li], scalarsLineSetFrom1To2_[li],
+                              scalarsLineSet2_[matchedIdx], scalarsLineSetFrom2To1_[matchedIdx]);
+                pairs.push_back(pair);
+            } else {
+                resultSet->push_back(l, matchedIdx);
+                resultSet->push_back(l_match, matchedIdx);
+                colors->push_back(colormap[matchedIdx]);
+                colors->push_back(colormap[matchedIdx]);
+            }
+        }
+
+        LogInfo("Pairwise comparison: "
+                << numNoMatch << " lines have no match, " << numAlreadyMatched
+                << " lines found a match that was already taken, " << numPairs << " pairs found.");
+
+        // Compute mean lines and property ranges
+
+        std::vector<MeanLine> means;
+        float minDeviation = std::numeric_limits<float>::infinity(), maxDeviation = 0.0f;
+        float minRunlength = std::numeric_limits<float>::infinity(), maxRunlength = 0.0f;
+        float minWallDistance = std::numeric_limits<float>::infinity(), maxWallDistance = 0.0f;
+
+        for (LinePair& pair : pairs) {
+            MeanLine mean = pair.meanLineUntil(splitThreshold_.get());
+
+            for (const auto d : mean.deviations) {
+                if (d < minDeviation) minDeviation = d;
+                if (d > maxDeviation) maxDeviation = d;
             }
 
-            if (mean.isPairDiverged) {
-                podGfx(podMesh, vec3(mean.line.getPositions().back()), podSize_.get(), podColor_.get());
-            } else if (mean.isPairOfDifferentLength) {
-                podGfx(podMesh, vec3(mean.line.getPositions().back()), podSize_.get(), earlyEndColor_.get());
-            }
+            auto l = mean.line.getLength();
+            if (l < minRunlength) minRunlength = l;
+            if (l > maxRunlength) maxRunlength = l;
 
-            if (divergedLines_.get() > 0.f) {
-                LinePair ends = mean.pair->lastPart(mean.endIndex);
-                auto color =
-                    colorMapping({mean.deviations.back(), minDeviation, maxDeviation},
-                                 {(float)mean.line.getLength(), minRunlength, maxRunlength});
+            means.push_back(mean);
+        }
+
+        severityFilter_.setMaxValue(numPairs);
+
+        std::sort(means.begin(), means.end(),
+                  [&](MeanLine a, MeanLine b) { return severeness(a) > severeness(b); });
+
+        // Create mesh to render
+
+        for (size_t l_i = 0; l_i < severityFilter_.get(); l_i++) {
+            MeanLine mean = means[l_i];
+
+            if (mean.pair->bothExist()) {
+
                 tubeGfx(
-                    mesh, ends.l1.getPositions(), [&](int i) { return divergedLines_.get(); },
-                    [&](int i) { return color; },
-                    [&](int i) { return bridge.l1Normals[mean.endIndex + i]; });
+                    mesh, mean.line.getPositions(), [&](int i) { return mean.deviations[i]; },
+                    [&](int i) {
+                        return colorMapping(
+                            {mean.pair->scalars1[i], 0, 1}, {mean.pair->scalars2[i], 0, 1},
+                            {mean.deviations[i], minDeviation, maxDeviation},
+                            {(float)mean.line.getLength(), minRunlength, maxRunlength});
+                    },
+                    [](int i) { return vec3(0); });
 
-                tubeGfx(
-                    mesh, ends.l2.getPositions(), [&](int i) { return divergedLines_.get(); },
-                    [&](int i) { return color; },
-                    [&](int i) { return bridge.l2Normals[mean.endIndex + i]; });
+                BridgeFace bridge = mean.pair->bridgeFace();
+                if (bridge.l1Normals.size() != mean.pair->l1.getPositions().size()) {
+                    LogWarn("Bridge l1 normals " << bridge.l1Normals.size() << " instead of "
+                                                 << mean.pair->l1.getPositions().size());
+                }
+                if (bridge.l2Normals.size() != mean.pair->l2.getPositions().size()) {
+                    LogWarn("Bridge l2 normals " << bridge.l2Normals.size() << " instead of "
+                                                 << mean.pair->l2.getPositions().size());
+                }
+
+                if (mean.isPairDiverged) {
+                    podGfx(podMesh, vec3(mean.line.getPositions().back()), podSize_.get(),
+                           podColor_.get());
+                } else if (mean.isPairOfDifferentLength) {
+                    podGfx(podMesh, vec3(mean.line.getPositions().back()), podSize_.get(),
+                           earlyEndColor_.get());
+                }
+
+                if (divergedLines_.get() > 0.f) {
+                    LinePair ends = mean.pair->lastPart(mean.endIndex);
+                    auto color =
+                        colorMapping({mean.pair->scalars1.back(), 0, 1}, {mean.pair->scalars2.back(), 0, 1},
+                                     {mean.deviations.back(), minDeviation, maxDeviation},
+                                     {(float)mean.line.getLength(), minRunlength, maxRunlength});
+                    tubeGfx(
+                        mesh, ends.l1.getPositions(), [&](int i) { return divergedLines_.get(); },
+                        [&](int i) { return color; },
+                        [&](int i) { return /*bridge.l1Normals[mean.endIndex + i];*/ vec3(0); });
+
+                    tubeGfx(
+                        mesh, ends.l2.getPositions(), [&](int i) { return divergedLines_.get(); },
+                        [&](int i) { return color; },
+                        [&](int i) { return /*bridge.l2Normals[mean.endIndex + i];*/ vec3(0); });
+                }
             }
         }
     }
@@ -267,6 +503,8 @@ void IntegralLineCompare::process() {
 }
 
 float IntegralLineCompare::severeness(MeanLine mean) {
+
+    // formula
 
     float sum = 0.f;
     for (auto d : mean.deviations) {
@@ -287,21 +525,43 @@ float IntegralLineCompare::severeness(MeanLine mean) {
     }
 }
 
-vec4 IntegralLineCompare::colorMapping(BoundedFloat thickness, BoundedFloat runlength,
-                                       BoundedFloat wallDistance) {
-    vec4 rgba =
-        thickness_.get().sample((thickness.v - thickness.min) / (thickness.max - thickness.min));
+vec4 IntegralLineCompare::colorMapping(BoundedFloat scalar1, BoundedFloat scalar2,
+                                       BoundedFloat thickness, BoundedFloat runlength) {
+    vec4 rgba = vec4(0);
     vec3 rgb = vec3(rgba);
     float a = rgba.a;
-    if (enableRunlength_) {
-        rgba = runlength_.get().sample((runlength.v - runlength.min) /
-                                       (runlength.max - runlength.min));
+    if (enableScalar1_) {
+        rgba = scalar1_.get().sample((scalar1.v - scalar1.min) / (scalar1.max - scalar1.min));
+
+        // formula
         rgb += vec3(rgba) * rgba.a;
         a += rgba.a;
     }
-    if (enableWallDistance_) {
-        rgba = wallDistance_.get().sample((wallDistance.v - wallDistance.min) /
-                                          (wallDistance.max - wallDistance.min));
+    if (enableScalar2_) {
+        rgba = scalar2_.get().sample((scalar2.v - scalar2.min) / (scalar2.max - scalar2.min));
+        rgb += vec3(rgba) * rgba.a;
+        a += rgba.a;
+    }
+    if (enableScalarDiff_) {
+        auto s1 = (scalar1.v - scalar1.min) / (scalar1.max - scalar1.min);
+        auto s2 = (scalar2.v - scalar2.min) / (scalar2.max - scalar2.min);
+
+        // formula
+        auto abs = glm::abs(s1 - s2);
+
+        rgba = scalarDiff_.get().sample(abs);
+        rgb += vec3(rgba) * rgba.a;
+        a += rgba.a;
+    }
+    if (enableThickness_) {
+        rgba = thickness_.get().sample((thickness.v - thickness.min) /
+                                       (thickness.max - thickness.min));
+        rgb += vec3(rgba) * rgba.a;
+        a += rgba.a;
+    }
+    if (enableRunlength_) {
+        rgba = runlength_.get().sample((runlength.v - runlength.min) /
+                                       (runlength.max - runlength.min));
         rgb += vec3(rgba) * rgba.a;
         a += rgba.a;
     }
@@ -311,6 +571,8 @@ vec4 IntegralLineCompare::colorMapping(BoundedFloat thickness, BoundedFloat runl
 void IntegralLineCompare::tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<dvec3> vertices,
                                   std::function<float(int)> radius, std::function<vec4(int)> color,
                                   std::function<vec3(int)> halftubeNormal) {
+    if (vertices.size() <= 1) return;
+
     auto meshIndices = mesh->addIndexBuffer(DrawType::Lines, ConnectivityType::StripAdjacency);
 
     for (size_t i = 0; i < vertices.size(); i++) {
@@ -336,7 +598,8 @@ void IntegralLineCompare::tubeGfx(std::shared_ptr<MyLineMesh> mesh, std::vector<
     }
 }
 
-void IntegralLineCompare::podGfx(std::shared_ptr<BasicMesh> mesh, vec3 pos, float radius, vec4 color) {
+void IntegralLineCompare::podGfx(std::shared_ptr<BasicMesh> mesh, vec3 pos, float radius,
+                                 vec4 color) {
     meshutil::sphere(pos, radius, color, mesh);
 }
 

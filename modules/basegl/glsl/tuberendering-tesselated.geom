@@ -98,7 +98,7 @@ void main() {
     radius[0] = vRadius_[BEGIN];
     radius[1] = vRadius_[END];
     if (radius[0] == 0) { radius[0] = .0001; color[0].a = 0; }
-    if (radius[1] == 0) return;
+    if (radius[1] == 0) { radius[1] = .0001; color[1].a = 0; }
     pickColor = vec4(pickingIndexToColor(pickID_[BEGIN]), pickID_[BEGIN] == 0 ? 0.0 : 1.0);
     vec3 startPos = gl_in[BEGIN].gl_Position.xyz;
     vec3 endPos = gl_in[END].gl_Position.xyz;

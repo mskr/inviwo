@@ -68,6 +68,8 @@ struct PointCloud : public inviwo::SpatialEntity<3> {
     std::vector<float> dist;
     std::vector<float> WSS;
     std::vector<float> press;
+    std::vector<float> vorticity;
+    std::vector<float> boundarydist;
     std::vector<Subgroup> subgroups;
     PointCloud() {}
     PointCloud(const PointCloud& toCopy)
@@ -76,6 +78,7 @@ struct PointCloud : public inviwo::SpatialEntity<3> {
         , dist(toCopy.dist)
         , WSS(toCopy.WSS)
         , press(toCopy.press)
+        , vorticity(toCopy.vorticity)
         , subgroups(toCopy.subgroups) {}
     PointCloud* clone() const { return new PointCloud(*this); }
 };
@@ -285,7 +288,7 @@ struct PointCloudVelocitySampler : public SpatialSampler<3, 3, double> {
 
         return pointcloud.vel[*kdtree.findNearest(pos)->getDataAsPointer()];
 
-        size_t nearestNeighbor = 0;
+        /*size_t nearestNeighbor = 0;
         float smallestDistance = std::numeric_limits<float>::infinity();
         for (size_t k = 0; k < pointcloud.points.size(); k++) {
             if (distance(pointcloud.points[k], vec3(pos)) < smallestDistance) {
@@ -293,7 +296,7 @@ struct PointCloudVelocitySampler : public SpatialSampler<3, 3, double> {
                 smallestDistance = distance(pointcloud.points[nearestNeighbor], vec3(pos));
             }
         }
-        return pointcloud.vel[nearestNeighbor];
+        return pointcloud.vel[nearestNeighbor];*/
     }
 
     virtual bool withinBoundsDataSpace(const dvec3& pos) const {
@@ -301,7 +304,57 @@ struct PointCloudVelocitySampler : public SpatialSampler<3, 3, double> {
         return !(glm::any(glm::lessThan(pos, dvec3(meshAABB.min))) ||
                  glm::any(glm::greaterThan(pos, dvec3(meshAABB.max))));
     }
-};  // namespace SimDataSampling3D
+};
+
+struct PointCloudScalarSampler : public SpatialSampler<3, 1, double> {
+
+    const Mesh& boundaries;
+    const SimData3D::PointCloud& pointcloud;
+    std::vector<float>& scalars;
+    K3DTree<int, float> kdtree;
+    AABB pointCloudAABB;
+    AABB meshAABB;
+    vec3 meshSizeFactor;
+
+    PointCloudScalarSampler(SimData3D::PointCloud& pointcloud, std::vector<float>& scalars, const Mesh& boundaries)
+        : SpatialSampler<3, 1, double>(pointcloud)
+        , boundaries(boundaries)
+        , pointcloud(pointcloud)
+        , scalars(scalars)
+        , kdtree()
+        , pointCloudAABB(pointcloud.points)
+        , meshAABB(boundaries)
+        , meshSizeFactor(1) {
+
+        for (size_t i = 0; i < pointcloud.points.size(); i++) {
+
+            kdtree.insert(pointcloud.points[i], (int)i);
+        }
+    }
+
+    virtual double sampleDataSpace(const dvec3& pos) const {
+
+        if (scalars.empty()) return .0;
+        auto nearest = kdtree.findNearest(pos);
+        auto ptr = nearest->getDataAsPointer();
+        return scalars[*ptr];
+
+        /*size_t nearestNeighbor = 0;
+        float smallestDistance = std::numeric_limits<float>::infinity();
+        for (size_t k = 0; k < pointcloud.points.size(); k++) {
+            if (distance(pointcloud.points[k], vec3(pos)) < smallestDistance) {
+                nearestNeighbor = k;
+                smallestDistance = distance(pointcloud.points[nearestNeighbor], vec3(pos));
+            }
+        }
+        return pointcloud.vel[nearestNeighbor];*/
+    }
+
+    virtual bool withinBoundsDataSpace(const dvec3& pos) const {
+        return !(glm::any(glm::lessThan(pos, dvec3(meshAABB.min))) ||
+                 glm::any(glm::greaterThan(pos, dvec3(meshAABB.max))));
+    }
+};
 
 }  // namespace SimDataSampling3D
 
@@ -317,19 +370,26 @@ public:
     virtual void process() override;
 
 protected:
+    
+    enum class Scalar { Vorticity, Pressure, WSS, CellWallDistance, BoundaryDistance };
+
     MeshInport boundaries_;
     MeshInport seedSurface_;
 
     MeshOutport pointCloud_;
     DataOutport<SpatialSampler<3, 3, double>> sampler_;
+    DataOutport<SpatialSampler<3, 1, double>> scalarSampler_;
     MeshOutport insideTest_;
     SeedPoints3DOutport streamlineSeeds_;
 
     FileProperty file_;
     BoolProperty rescale_;
+    BoolProperty noisify_;
+    FloatProperty noise_;
     ButtonProperty readButton_;
     ButtonProperty seedButton_;
     IntSizeTProperty numSeeds_;
+    TemplateOptionProperty<Scalar> scalar_;
 
     OptionPropertyInt subgroupSelector_;
 

@@ -147,6 +147,8 @@ void read(const std::string file, PointCloud& out) {
     SelectedQuantity dist(quantities, "cell-wall-distance");
     SelectedQuantity wss(quantities, "wall-shear");
     SelectedQuantity press(quantities, "total-pressure");
+    SelectedQuantity vort(quantities, "vorticity-mag");
+    SelectedQuantity boundarydist(quantities, "boundary-cell-dist");
 
     int groupID = 0;
     R lastCellnumber = 0;
@@ -186,6 +188,10 @@ void read(const std::string file, PointCloud& out) {
 
         if (press.found) out.press.push_back(numbers[press.valueRefs[0]]);
 
+        if (vort.found) out.vorticity.push_back(numbers[vort.valueRefs[0]]);
+
+        if (boundarydist.found) out.boundarydist.push_back(numbers[boundarydist.valueRefs[0]]);
+
         count++;
     }
 
@@ -217,13 +223,22 @@ AnsysFieldReader3D::AnsysFieldReader3D()
     , seedSurface_("seedSurface")
     , pointCloud_("pointCloud")
     , sampler_("sampler")
+    , scalarSampler_("scalarSampler")
     , insideTest_("insideTest")
     , streamlineSeeds_("streamlineSeeds")
     , file_("filename", "File")
     , rescale_("rescale", "Rescale", true)
+    , noisify_("noisify", "Noisify", true)
+    , noise_("noise", "Noise")
     , readButton_("readButton", "Read")
     , seedButton_("seedButton", "Seed on Input Surface")
     , numSeeds_("numSeeds", "Seedpoints", 10, 1, 1000)
+    , scalar_("scalar", "Scalar",
+              {{"vorticity", "Vorticity", Scalar::Vorticity},
+               {"pressure", "Pressure", Scalar::Pressure},
+               {"WSS", "WSS", Scalar::WSS},
+               {"BoundaryDistance", "BoundaryDistance", Scalar::BoundaryDistance},
+               {"CellWallDistance", "CellWallDistance", Scalar::CellWallDistance}})
     , subgroupSelector_("subgroupSelector", "Subgroup")
     , pointcloudVis_("pointCloudVis", "Raw View")
     , pointSize_("pnts", "Point Size")
@@ -255,11 +270,12 @@ AnsysFieldReader3D::AnsysFieldReader3D()
 
     addPort(pointCloud_);
     addPort(sampler_);
+    addPort(scalarSampler_);
     addPort(insideTest_);
     addPort(streamlineSeeds_);
 
-    addProperties(file_, rescale_, readButton_, seedButton_, numSeeds_, subgroupSelector_,
-                  pointcloudVis_, spaceStats_, interactive_);
+    addProperties(file_, rescale_, noisify_, noise_, readButton_, seedButton_, numSeeds_, scalar_,
+                  subgroupSelector_, pointcloudVis_, spaceStats_, interactive_);
 
     pointcloudVis_.addProperties(pointSize_, velocityScaling_);
 
@@ -330,7 +346,7 @@ AnsysFieldReader3D::AnsysFieldReader3D()
                 auto reduced = std::make_shared<std::vector<vec3>>();
                 std::default_random_engine generator;
                 std::uniform_int_distribution<int> distribution(0, seeds->size());
-                for (int i = 0; i < 500; i++)
+                for (int i = 0; i < numSeeds_.get(); i++)
                     reduced->push_back(seeds->at(distribution(generator)));
                 seeds = reduced;
             }
@@ -393,6 +409,16 @@ void AnsysFieldReader3D::process() {
 
     SimFileReading3D::read(file_.get(), pointcloud);
 
+    if (noisify_) {
+        std::default_random_engine generator;
+        std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+        for (auto& v : pointcloud.vel) {
+            v.x += dist(generator) * noise_.get();
+            v.y += dist(generator) * noise_.get();
+            v.z += dist(generator) * noise_.get();
+        }
+    }
+
     if (pointcloud.vel.empty()) {
         LogWarn("Velocity not found => abort.");
         return;
@@ -442,6 +468,40 @@ void AnsysFieldReader3D::createSampler(const Mesh& boundaries) {
     insideTestPoint_.setMaxValue(meshMax_.get() + vec3(.5f));
 
     sampler_.setData(velocitySampler);
+
+    switch (scalar_.get()) {
+        case Scalar::Pressure:
+            if (!pointcloud.press.empty())
+                scalarSampler_.setData(std::make_shared<PointCloudScalarSampler>(
+                    pointcloud, pointcloud.press, boundaries));
+            else
+                LogWarn("Pressure not found.");
+        case Scalar::WSS:
+            if (!pointcloud.WSS.empty())
+                scalarSampler_.setData(std::make_shared<PointCloudScalarSampler>(
+                    pointcloud, pointcloud.WSS, boundaries));
+            else
+                LogWarn("WSS not found.");
+        case Scalar::BoundaryDistance:
+            if (!pointcloud.boundarydist.empty())
+                scalarSampler_.setData(std::make_shared<PointCloudScalarSampler>(
+                    pointcloud, pointcloud.boundarydist, boundaries));
+            else
+                LogWarn("BoundaryDistance not found.");
+        case Scalar::CellWallDistance:
+            if (!pointcloud.dist.empty())
+                scalarSampler_.setData(std::make_shared<PointCloudScalarSampler>(
+                    pointcloud, pointcloud.dist, boundaries));
+            else
+                LogWarn("CellWallDistance not found.");
+        default:
+        case Scalar::Vorticity:
+            if (!pointcloud.vorticity.empty())
+                scalarSampler_.setData(std::make_shared<PointCloudScalarSampler>(
+                    pointcloud, pointcloud.vorticity, boundaries));
+            else
+                LogWarn("Vorticity not found.");
+    }
 }
 
 void AnsysFieldReader3D::seedOnInputSurface() {
@@ -514,7 +574,8 @@ void AnsysFieldReader3D::seedOnInputSurface() {
             }
         }
         result.up = upper - lower;
-        auto n = glm::normalize(glm::cross(glm::normalize(result.up), glm::normalize(xend - xstart)));
+        auto n =
+            glm::normalize(glm::cross(glm::normalize(result.up), glm::normalize(xend - xstart)));
         auto rightAxis = glm::normalize(glm::cross(glm::normalize(result.up), n));
         dvec3 leftest = rightAxis * 100000.;
         dvec3 rightest = rightAxis * (-100000.);
@@ -667,12 +728,15 @@ std::shared_ptr<Mesh> AnsysFieldReader3D::pointCloudToMesh3D(PointCloud& pointcl
             }
         }
 
-        vertices[i] = vec3(pointcloud.points[i]);
-        radii[i] = pointSize_.get() * (1.f + length(pointcloud.vel[i]) * velocityScaling_.get());
-
         if (selectedSubgroup == -1 || currentSubgroupId == selectedSubgroup) {
+
+            vertices[i] = vec3(pointcloud.points[i]);
+            radii[i] =
+                pointSize_.get() * (1.f + length(pointcloud.vel[i]) * velocityScaling_.get());
             colors[i] = colormap[currentSubgroupId];
         } else {
+            vertices[i] = vec3(0);
+            radii[i] = 0;
             colors[i] = vec4(0);
         }
     }
