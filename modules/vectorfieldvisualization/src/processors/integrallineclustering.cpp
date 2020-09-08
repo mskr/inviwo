@@ -49,6 +49,7 @@ const ProcessorInfo IntegralLineClustering::processorInfo_{
 IntegralLineClustering::IntegralLineClustering()
     : Processor()
     , in_("in")
+    , velocitySampler_("velSampler")
     , out_("out")
     , colors_("colors")
     , nClusters_("nCluster", "Clusters", 20, 1, 500)
@@ -58,15 +59,18 @@ IntegralLineClustering::IntegralLineClustering()
     , representatives_("rep", "Representatives")
     , distanceBasedRepresentative_("distRep", "Distance")
     , lengthBasedRepresentative_("lengthRep", "Length")
+    , diffBasedRepresentative_("diffRep", "Diff")
     , densityBasedRepresentative_("densityRep", "Density")
     , densityMapResolution_("densityMapRes", "Density Map", 100, 10, 500) {
 
     addPort(in_);
+    addPort(velocitySampler_);
     addPort(out_);
     addPort(colors_);
     addProperties(nClusters_, init_, compute_, findClusterCount_, representatives_);
     representatives_.addProperties(distanceBasedRepresentative_, lengthBasedRepresentative_,
-                                   densityBasedRepresentative_, densityMapResolution_);
+                                   diffBasedRepresentative_, densityBasedRepresentative_,
+                                   densityMapResolution_);
 
     init_.onChange([&]() { ahc_.reset(); });
     compute_.onChange([&]() {
@@ -137,6 +141,43 @@ void IntegralLineClustering::process() {
 
         if (lengthBasedRepresentative_.get()) {
             IntegralLine rep = ClusterRepresentatives::lengthBased(cluster);
+            out->push_back(rep, count++);
+            colors->push_back(colormap[i]);
+        }
+
+        if (diffBasedRepresentative_.get()) {
+            IntegralLine rep = cluster[0];
+            //std::vector<std::pair<IntegralLine, float>> diffsums;
+            float max = 0;
+            for (const auto& line : cluster) {
+                float diffsum = 0;
+                auto vel = line.getMetaData<dvec3>("velocity");
+                auto pos = line.getPositions();
+                for (size_t i = 0; i < pos.size(); i++) {
+                    auto v1 = vel[i];
+                    auto v2 = velocitySampler_.getData()->sample(pos[i]);
+
+                    auto magdiff = glm::abs(glm::length(v1) - glm::length(v2));
+                    auto dirdiff =
+                        1.f - .5f * (1.f + glm::dot(glm::normalize(v1), glm::normalize(v2)));
+
+                    auto diff = dirdiff / (1.f + magdiff);
+                    diffsum += diff;
+                }
+                //diffsums.push_back({line, diffsum});
+                if (max < diffsum) {
+                    rep = line;
+                    max = diffsum;
+                }
+            }
+            /*std::sort(diffsums.begin(), diffsums.end(),
+                      [](std::pair<IntegralLine, float> a, std::pair<IntegralLine, float> b) {
+                          return a.second > b.second;
+                      });
+            for (size_t i = 0; i < std::min(cluster.size(), size_t(5)); i++) {
+                out->push_back(diffsums[i].first, count++);
+                colors->push_back(colormap[i]);
+            }*/
             out->push_back(rep, count++);
             colors->push_back(colormap[i]);
         }

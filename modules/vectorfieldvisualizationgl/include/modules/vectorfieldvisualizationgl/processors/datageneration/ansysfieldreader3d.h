@@ -36,6 +36,7 @@
 #include <inviwo/core/ports/meshport.h>
 #include <inviwo/core/ports/imageport.h>
 #include <modules/vectorfieldvisualization/ports/seedpointsport.h>
+#include <inviwo/core/ports/dataoutport.h>
 #include <inviwo/core/processors/processor.h>
 #include <inviwo/core/properties/ordinalproperty.h>
 #include <inviwo/core/properties/stringproperty.h>
@@ -65,6 +66,7 @@ struct Subgroup {
 struct PointCloud : public inviwo::SpatialEntity<3> {
     std::vector<glm::vec3> points;
     std::vector<glm::vec3> vel;
+    std::vector<float> velmag;
     std::vector<float> dist;
     std::vector<float> WSS;
     std::vector<float> press;
@@ -75,10 +77,12 @@ struct PointCloud : public inviwo::SpatialEntity<3> {
     PointCloud(const PointCloud& toCopy)
         : points(toCopy.points)
         , vel(toCopy.vel)
+        , velmag(toCopy.velmag)
         , dist(toCopy.dist)
         , WSS(toCopy.WSS)
         , press(toCopy.press)
         , vorticity(toCopy.vorticity)
+        , boundarydist(toCopy.boundarydist)
         , subgroups(toCopy.subgroups) {}
     PointCloud* clone() const { return new PointCloud(*this); }
 };
@@ -316,7 +320,8 @@ struct PointCloudScalarSampler : public SpatialSampler<3, 1, double> {
     AABB meshAABB;
     vec3 meshSizeFactor;
 
-    PointCloudScalarSampler(SimData3D::PointCloud& pointcloud, std::vector<float>& scalars, const Mesh& boundaries)
+    PointCloudScalarSampler(SimData3D::PointCloud& pointcloud, std::vector<float>& scalars,
+                            const Mesh& boundaries)
         : SpatialSampler<3, 1, double>(pointcloud)
         , boundaries(boundaries)
         , pointcloud(pointcloud)
@@ -370,8 +375,14 @@ public:
     virtual void process() override;
 
 protected:
-    
-    enum class Scalar { Vorticity, Pressure, WSS, CellWallDistance, BoundaryDistance };
+    enum class Scalar {
+        Vorticity,
+        Pressure,
+        WSS,
+        CellWallDistance,
+        BoundaryDistance,
+        VelocityMagnitude
+    };
 
     MeshInport boundaries_;
     MeshInport seedSurface_;
@@ -381,6 +392,8 @@ protected:
     DataOutport<SpatialSampler<3, 1, double>> scalarSampler_;
     MeshOutport insideTest_;
     SeedPoints3DOutport streamlineSeeds_;
+    DataOutport<std::vector<vec3>> points_;
+    DataOutport<std::vector<vec3>> vel_;
 
     FileProperty file_;
     BoolProperty rescale_;

@@ -66,8 +66,7 @@ IntegralLineCompare::IntegralLineCompare()
     , minRadius_("minRadius", "Min Radius")
     , maxRadius_("maxRadius", "Max Radius")
     , precompute_("precompute", "Precompute")
-    , compareMagnitude_("compareMagnitude", "Compare Magnitude")
-    , compareDirection_("compareDirection", "Compare Direction")
+    , compareMagnitude_("compareMagnitude", "Weight by Magnitude")
     , diverged_("diverged", "Diverged Lines, Point of Divergence")
     , splitThreshold_("splitThreshold", "Split Threshold")
     , podSize_("podSize", "POD Size", .1f, 0.f, 1.f)
@@ -106,6 +105,7 @@ IntegralLineCompare::IntegralLineCompare()
     addPort(scalarSampler2_);
     addPort(lines1_);
     addPort(lines2_);
+    lines2_.setOptional(true);
     addPort(out_);
     addPort(tubeMesh_);
     addPort(podMesh_);
@@ -114,12 +114,13 @@ IntegralLineCompare::IntegralLineCompare()
     addProperties(matchTolerance_, noTriples_, tubes_, referenceStreamlines_, referenceVis_,
                   diverged_, severity_, colorMaps_);
     referenceVis_.addProperties(radiusScaling_, minRadius_, maxRadius_, precompute_,
-                                compareMagnitude_, compareDirection_);
+                                compareMagnitude_);
     diverged_.addProperties(splitThreshold_, podSize_, podColor_, earlyEndColor_, divergedLines_);
     severity_.addProperties(severityMetric_, severityFilter_);
 
     colorMaps_.addProperties(enableScalar1_, scalar1_, enableScalar2_, scalar2_, enableScalarDiff_,
-                             scalarDiff_, enableThickness_, thickness_, enableRunlength_, runlength_);
+                             scalarDiff_, enableThickness_, thickness_, enableRunlength_,
+                             runlength_);
 
     severityMetric_.addOption("runlength", "Runlength", SeverenessMetric::Runlength);
     severityMetric_.addOption("runlengthUntilDiverged", "Runlength Until Diverged",
@@ -139,15 +140,23 @@ IntegralLineCompare::IntegralLineCompare()
     enableScalar2_.onChange([&]() { scalar2_.setReadOnly(!enableScalar2_); });
     enableScalarDiff_.onChange([&]() { scalarDiff_.setReadOnly(!enableScalarDiff_); });
 
+    using namespace std::chrono;
+    using Clock = high_resolution_clock;
+    using T = time_point<Clock>;
+    auto sec = [](T t0, T t1) { return duration_cast<seconds>((t1) - (t0)).count(); };
+    auto millis = [](T t0, T t1) { return duration_cast<milliseconds>((t1) - (t0)).count(); };
+
     auto sampleAlongRefLines = [&]() {
+        auto t0 = Clock::now();
         if (!lines1_.hasData()) return;
         if (!velocitySampler_.hasData()) return;
         const auto sampler = velocitySampler_.getData();
-        deviationsMagnitude_.clear();
-        deviationsDirection_.clear();
-        const auto set1 = *lines1_.getData();
+        deviationsMagnitude_ = {};
+        deviationsDirection_ = {};
+        const auto set1 = lines1_.getData();
         float maxDeviationMagnitude = .0f;
-        for (const auto& refLine : set1.getVector()) {
+        float maxSumMagnitude = .0f;
+        for (const auto& refLine : set1->getVector()) {
             const auto& positions = refLine.getPositions();
             const auto& velocities = refLine.getMetaData<dvec3>("velocity");
 
@@ -155,6 +164,7 @@ IntegralLineCompare::IntegralLineCompare()
 
             std::vector<float> deviationsMagnitude;
             std::vector<float> deviationsDirection;
+            std::vector<float> sumsMagnitude;
 
             for (size_t i = 0; i < positions.size(); i++) {
 
@@ -162,9 +172,12 @@ IntegralLineCompare::IntegralLineCompare()
 
                 // formula
                 auto d = glm::abs(glm::length(otherVelocities[i]) - glm::length(velocities[i]));
+                auto sum = glm::length(otherVelocities[i]) + glm::length(velocities[i]);
 
                 deviationsMagnitude.push_back(d);
+                sumsMagnitude.push_back(sum);
                 if (d > maxDeviationMagnitude) maxDeviationMagnitude = d;
+                if (sum > maxSumMagnitude) maxSumMagnitude = sum;
             }
 
             for (size_t i = 0; i < positions.size(); i++) {
@@ -180,25 +193,23 @@ IntegralLineCompare::IntegralLineCompare()
 
         maxRadius_.setMaxValue(maxDeviationMagnitude);
 
-        for (size_t l = 0; l < set1.getVector().size(); l++) {
-            for (size_t i = 0; i < set1.getVector()[l].getPositions().size(); i++) {
-                deviationsMagnitude_[l][i] /= maxDeviationMagnitude;
-            }
-        }
+        LogInfo("Sample velocity along " << set1->size() << " ref lines took " << millis(t0, Clock::now()) << " ms.");
     };
 
     precompute_.onChange(sampleAlongRefLines);
     velocitySampler_.onChange(sampleAlongRefLines);
+    lines1_.onChange(sampleAlongRefLines);
 
-    scalarSampler1_.onChange([&]() {
+    auto getScalarsFrom1 = [&]() {
+        auto t0 = Clock::now();
         if (!scalarSampler1_.hasData()) return;
         auto sampler = scalarSampler1_.getData();
-        scalarsLineSet1_.clear();
-        scalarsLineSetFrom2To1_.clear();
+        scalarsLineSet1_ = {};
+        scalarsLineSetFrom2To1_ = {};
         if (lines1_.hasData()) {
-            const auto set1 = *lines1_.getData();
+            const auto set1 = lines1_.getData();
             float max = .0f;
-            for (auto l : set1.getVector()) {
+            for (auto l : set1->getVector()) {
                 auto positions = l.getPositions();
                 std::vector<float> scalars;
                 for (auto p : positions) {
@@ -211,7 +222,7 @@ IntegralLineCompare::IntegralLineCompare()
             for (auto& scalars : scalarsLineSet1_)
                 for (auto& s : scalars) s /= max;
         }
-        if (lines2_.hasData()) {
+        if (lines2_.hasData() && !referenceStreamlines_) {
             const auto set2 = *lines2_.getData();
             float max = .0f;
             for (auto l : set2.getVector()) {
@@ -227,14 +238,23 @@ IntegralLineCompare::IntegralLineCompare()
             for (auto& scalars : scalarsLineSetFrom2To1_)
                 for (auto& s : scalars) s /= max;
         }
-    });
 
-    scalarSampler2_.onChange([&]() {
+        LogInfo("Sample scalars in first field took " << millis(t0, Clock::now()) << " ms");
+    };
+
+    scalarSampler1_.onChange(getScalarsFrom1);
+    lines1_
+        .onChange(getScalarsFrom1);
+    lines2_
+        .onChange(getScalarsFrom1);
+
+    auto getScalarsFrom2 = [&]() {
+        auto t0 = Clock::now();
         if (!scalarSampler2_.hasData()) return;
         auto sampler = scalarSampler2_.getData();
-        scalarsLineSet2_.clear();
-        scalarsLineSetFrom1To2_.clear();
-        if (lines2_.hasData()) {
+        scalarsLineSet2_ = {};
+        scalarsLineSetFrom1To2_ = {};
+        if (lines2_.hasData() && !referenceStreamlines_) {
             const auto set2 = *lines2_.getData();
             float max = .0f;
             for (auto l : set2.getVector()) {
@@ -266,12 +286,17 @@ IntegralLineCompare::IntegralLineCompare()
             for (auto& scalars : scalarsLineSetFrom1To2_)
                 for (auto& s : scalars) s /= max;
         }
-    });
+
+        LogInfo("Sample scalars in second field took " << millis(t0, Clock::now()) << " ms");
+    };
+
+    scalarSampler2_.onChange(getScalarsFrom2);
+    lines1_.onChange(getScalarsFrom2);
+    lines2_.onChange(getScalarsFrom2);
 }
 
 void IntegralLineCompare::process() {
     const auto set1 = *lines1_.getData();
-    const auto set2 = *lines2_.getData();
     const auto resultSet = std::make_shared<IntegralLineSet>(mat4(1));
     const auto colors = std::make_shared<std::vector<vec4>>();
     auto mesh = std::make_shared<MyLineMesh>();
@@ -305,48 +330,29 @@ void IntegralLineCompare::process() {
             tubeGfx(
                 mesh, positions,
                 [&](int ii) {
-                    float r = .0f;
-                    float max = .0f;
-
                     // formula
+                    float r = deviationsDirection_[i][ii];
                     if (compareMagnitude_) {
-                        r += deviationsMagnitude_[i][ii];
-                        max += 1.f;
+                        r /= (1.f + deviationsMagnitude_[i][ii]);
                     }
-                    if (compareDirection_) {
-                        r += deviationsDirection_[i][ii];
-                        max += 1.f;
-                    }
-                    if (r == .0f)
-                        r = radiusScaling_.get();
-                    else
-                        r = r / max * radiusScaling_.get();
-                    return glm::clamp(r, minRadius_.get(), maxRadius_.get());
+                    return glm::clamp(r * radiusScaling_.get(), minRadius_.get(), maxRadius_.get());
                 },
                 [&](int ii) {
-                    float r = .0f;
-                    float max = .0f;
+                    float r = deviationsDirection_[i][ii];
                     if (compareMagnitude_) {
-                        r += deviationsMagnitude_[i][ii];
-                        max += 1.f;
+                        r /= (1.f + deviationsMagnitude_[i][ii]);
                     }
-                    if (compareDirection_) {
-                        r += deviationsDirection_[i][ii];
-                        max += 1.f;
-                    }
-                    if (r == .0f)
-                        r = radiusScaling_.get();
-                    else
-                        r = r / max * radiusScaling_.get();
                     return colorMapping({scalarsLineSet1_[i][ii], 0, 1},
                                         {scalarsLineSetFrom1To2_[i][ii], 0, 1},
-                                        {r, 0, radiusScaling_.get()});
+                                        {deviationsMagnitude_[i][ii], 0, 1}, {r, 0, 1});
                 },
                 [](int ii) { return vec3(0); });
         }
-    } else {
+    } else if (lines2_.hasData()) {
 
         // Here starts the original visualization.
+
+        const auto set2 = *lines2_.getData();
 
         auto distance = [](IntegralLine l1, IntegralLine l2) {
             float sum = .0f;
@@ -453,7 +459,7 @@ void IntegralLineCompare::process() {
                     [&](int i) {
                         return colorMapping(
                             {mean.pair->scalars1[i], 0, 1}, {mean.pair->scalars2[i], 0, 1},
-                            {mean.deviations[i], minDeviation, maxDeviation},
+                            {0, 0, 1}, {mean.deviations[i], minDeviation, maxDeviation},
                             {(float)mean.line.getLength(), minRunlength, maxRunlength});
                     },
                     [](int i) { return vec3(0); });
@@ -478,10 +484,10 @@ void IntegralLineCompare::process() {
 
                 if (divergedLines_.get() > 0.f) {
                     LinePair ends = mean.pair->lastPart(mean.endIndex);
-                    auto color =
-                        colorMapping({mean.pair->scalars1.back(), 0, 1}, {mean.pair->scalars2.back(), 0, 1},
-                                     {mean.deviations.back(), minDeviation, maxDeviation},
-                                     {(float)mean.line.getLength(), minRunlength, maxRunlength});
+                    auto color = colorMapping(
+                        {mean.pair->scalars1.back(), 0, 1}, {mean.pair->scalars2.back(), 0, 1},
+                        {0, 0, 1}, {mean.deviations.back(), minDeviation, maxDeviation},
+                        {(float)mean.line.getLength(), minRunlength, maxRunlength});
                     tubeGfx(
                         mesh, ends.l1.getPositions(), [&](int i) { return divergedLines_.get(); },
                         [&](int i) { return color; },
@@ -526,7 +532,8 @@ float IntegralLineCompare::severeness(MeanLine mean) {
 }
 
 vec4 IntegralLineCompare::colorMapping(BoundedFloat scalar1, BoundedFloat scalar2,
-                                       BoundedFloat thickness, BoundedFloat runlength) {
+                                       BoundedFloat magdiff, BoundedFloat thickness,
+                                       BoundedFloat runlength) {
     vec4 rgba = vec4(0);
     vec3 rgb = vec3(rgba);
     float a = rgba.a;
@@ -543,13 +550,7 @@ vec4 IntegralLineCompare::colorMapping(BoundedFloat scalar1, BoundedFloat scalar
         a += rgba.a;
     }
     if (enableScalarDiff_) {
-        auto s1 = (scalar1.v - scalar1.min) / (scalar1.max - scalar1.min);
-        auto s2 = (scalar2.v - scalar2.min) / (scalar2.max - scalar2.min);
-
-        // formula
-        auto abs = glm::abs(s1 - s2);
-
-        rgba = scalarDiff_.get().sample(abs);
+        rgba = scalarDiff_.get().sample((magdiff.v - magdiff.min) / (magdiff.max - magdiff.min));
         rgb += vec3(rgba) * rgba.a;
         a += rgba.a;
     }

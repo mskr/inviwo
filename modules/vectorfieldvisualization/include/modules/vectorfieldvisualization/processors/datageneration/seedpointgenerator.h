@@ -45,6 +45,7 @@
 #include <inviwo/core/properties/optionproperty.h>
 
 #include <modules/vectorfieldvisualization/ports/seedpointsport.h>
+#include <inviwo/core/ports/datainport.h>
 
 #include <random>
 
@@ -63,6 +64,9 @@ public:
 
 private:
     MeshInport seedSurface_;
+    DataInport<std::vector<glm::vec3>> points_;
+    DataInport<std::vector<glm::vec3>> vel1_;
+    DataInport<std::vector<glm::vec3>> vel2_;
     SeedPoints3DOutport seedPoints_;
 
     CompositeProperty lineGroup_;
@@ -98,8 +102,6 @@ private:
     
 
     CompositeProperty interactive_;
-    EventProperty hoverEvents_;
-    EventProperty clickEvents_;
     
     FloatVec3Property seedMin_;
     FloatVec3Property seedMax_;
@@ -109,6 +111,7 @@ private:
     void processPickEvent(Event* e);
 
     void seedOnInputSurface();
+    void seedBasedOnFieldDiff();
 };
 
 }  // namespace inviwo

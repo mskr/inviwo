@@ -159,7 +159,4 @@ double IntegralLine::calcLength(std::vector<dvec3>::const_iterator start,
     return length;
 }
 
-std::string IntegralLine::getName() const { return name_; }
-void IntegralLine::setName(std::string name) { name_ = name; }
-
 }  // namespace inviwo

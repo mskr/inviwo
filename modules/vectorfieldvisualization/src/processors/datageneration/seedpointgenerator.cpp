@@ -40,6 +40,7 @@
 #define SPHERE 4
 #define INTERACTIVE 5
 #define SURFACEMESH 6
+#define FIELDDIFF 7
 
 namespace inviwo {
 
@@ -56,6 +57,9 @@ const ProcessorInfo SeedPointGenerator::getProcessorInfo() const { return proces
 SeedPointGenerator::SeedPointGenerator()
     : Processor()
     , seedSurface_("seedSurface")
+    , points_("points")
+    , vel1_("vel1")
+    , vel2_("vel2")
     , seedPoints_("seedPoints")
     , lineGroup_("line", "Line")
     , planeGroup_("plane", "Plane")
@@ -77,16 +81,13 @@ SeedPointGenerator::SeedPointGenerator()
     , rd_()
     , mt_(rd_())
     , interactive_("interactive", "Interactive")
-    , hoverEvents_(
-          "hoverEvents", "Hover Events", [this](Event* e) { processPickEvent(e); },
-          MouseButton::None, MouseState::Move)
-    , clickEvents_(
-          "clickEvents", "Click Events", [this](Event* e) { processPickEvent(e); },
-          MouseButton::Left, MouseState::Press)
     , seedMin_("seedMin", "Seed Min", vec3(0), vec3(-1000), vec3(1000))
     , seedMax_("seedMax", "Seed Max", vec3(1), vec3(-1000), vec3(1000))
     , pickedSeed_("pickedSeed", "Seed", vec3(0), seedMin_.get(), seedMax_.get()) {
     addPort(seedSurface_);
+    addPort(points_);
+    addPort(vel1_);
+    addPort(vel2_);
     seedSurface_.setOptional(true);
     addPort(seedPoints_);
 
@@ -96,6 +97,7 @@ SeedPointGenerator::SeedPointGenerator()
     generator_.addOption("sphere", "Sphere", SPHERE);
     generator_.addOption("interactive", "Interactive", INTERACTIVE);
     generator_.addOption("surfacemesh", "Surface Mesh", SURFACEMESH);
+    generator_.addOption("fielddiff", "Field Diff", FIELDDIFF);
     generator_.setCurrentStateAsDefault();
     generator_.onChange([this]() { onGeneratorChange(); });
     addProperty(generator_);
@@ -124,7 +126,7 @@ SeedPointGenerator::SeedPointGenerator()
     useSameSeed_.onChange([&]() { seed_.setVisible(useSameSeed_.get()); });
 
     addProperties(interactive_);
-    interactive_.addProperties(hoverEvents_, clickEvents_, seedMin_, seedMax_, pickedSeed_);
+    interactive_.addProperties(seedMin_, seedMax_, pickedSeed_);
 
     onGeneratorChange();
 }
@@ -168,6 +170,9 @@ void SeedPointGenerator::process() {
         case SURFACEMESH:
             seedOnInputSurface();
             break;
+        case FIELDDIFF:
+            seedBasedOnFieldDiff();
+            break;
         default:
             LogWarn("No points generated since given type is not yet implemented");
             break;
@@ -181,7 +186,7 @@ void SeedPointGenerator::onGeneratorChange() {
     bool sphere = generator_.get() == SPHERE;
     bool surfacemesh = generator_.get() == SURFACEMESH;
 
-    numberOfPoints_.setVisible(rnd || line || sphere || surfacemesh);
+    numberOfPoints_.setVisible(true);
 
     planeResolution_.setVisible(plane);
     planeOrigin_.setVisible(plane);
@@ -348,7 +353,8 @@ void SeedPointGenerator::seedOnInputSurface() {
             }
         }
         result.up = upper - lower;
-        auto n = glm::normalize(glm::cross(glm::normalize(result.up), glm::normalize(xend - xstart)));
+        auto n =
+            glm::normalize(glm::cross(glm::normalize(result.up), glm::normalize(xend - xstart)));
         auto rightAxis = glm::normalize(glm::cross(glm::normalize(result.up), n));
         dvec3 leftest = rightAxis * 100000.;
         dvec3 rightest = rightAxis * (-100000.);
@@ -463,5 +469,41 @@ void SeedPointGenerator::seedOnInputSurface() {
 
     seedPoints_.setData(seeds);
 };
+
+void SeedPointGenerator::seedBasedOnFieldDiff() {
+    std::vector<float> diffs;
+    auto seeds = std::make_shared<std::vector<vec3>>();
+    if (points_.hasData() && vel1_.hasData() && vel2_.hasData()) {
+        if (points_.getData()->size() != vel2_.getData()->size() ||
+            points_.getData()->size() != vel1_.getData()->size() ||
+            vel1_.getData()->size() != vel2_.getData()->size()) {
+            LogWarn("Need two pointclouds of same size.");
+            return;
+        }
+        diffs.resize(numberOfPoints_.get(), .0f);
+        seeds->resize(numberOfPoints_.get());
+        for (size_t i = 0; i < points_.getData()->size(); i++) {
+            auto dirdiff = 1.f - .5f * (1.f + glm::dot(glm::normalize(vel1_.getData()->at(i)),
+                                                       glm::normalize(vel2_.getData()->at(i))));
+            auto magdiff =
+                glm::abs(glm::length(vel1_.getData()->at(i)) - glm::length(vel2_.getData()->at(i)));
+            auto diff = dirdiff / (1.f + magdiff);
+
+            size_t place = 0;
+            while (diff < diffs[place] && place < diffs.size()) place++;
+
+            if (place < seeds->size()) {
+                auto p = points_.getData()->at(i);
+                for (size_t j = seeds->size() - 1; j > place; j--) {
+                    seeds->at(j) = seeds->at(j - 1);
+                    diffs[j] = diffs[j - 1];
+                }
+                seeds->at(place) = p;
+                diffs[place] = diff;
+            }
+        }
+    }
+    seedPoints_.setData(seeds);
+}
 
 }  // namespace inviwo

@@ -35,6 +35,7 @@
 #include <inviwo/core/common/inviwo.h>
 #include <inviwo/core/processors/processor.h>
 #include <inviwo/core/ports/dataoutport.h>
+#include <inviwo/core/ports/datainport.h>
 
 #include <inviwo/core/properties/stringproperty.h>
 #include <inviwo/core/properties/ordinalproperty.h>
@@ -48,6 +49,7 @@
 
 #include <modules/vectorfieldvisualization/datastructures/integralline.h>
 #include <modules/vectorfieldvisualization/datastructures/integrallineset.h>
+#include <inviwo/core/util/spatialsampler.h>
 
 #include <vector>
 #include <array>
@@ -226,6 +228,7 @@ public:
 
 private:
     IntegralLineSetInport in_;
+    DataInport<SpatialSampler<3, 3, double>, 1> velocitySampler_;
     IntegralLineSetOutport out_;
     DataOutport<std::vector<vec4>> colors_;
 
@@ -237,6 +240,7 @@ private:
     CompositeProperty representatives_;
     BoolProperty distanceBasedRepresentative_;
     BoolProperty lengthBasedRepresentative_;
+    BoolProperty diffBasedRepresentative_;
     BoolProperty densityBasedRepresentative_;
     IntProperty densityMapResolution_;
 

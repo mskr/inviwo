@@ -242,7 +242,6 @@ void IntegralLineTracerProcessor<Tracer>::process() {
                 for (size_t sampler_i = 0; sampler_i < tracers.size(); sampler_i++) {
                     auto tracer = tracers[sampler_i];
                     IntegralLine line = tracer.traceFrom(seed);
-                    line.setName(dataSetNames[sampler_i]);
 
                     auto size = line.getPositions().size();
                     if (size > 1) {

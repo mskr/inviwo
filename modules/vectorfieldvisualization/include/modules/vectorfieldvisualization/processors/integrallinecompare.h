@@ -246,7 +246,6 @@ private:
     FloatProperty maxRadius_;
     ButtonProperty precompute_;
     BoolProperty compareMagnitude_;
-    BoolProperty compareDirection_;
 
     CompositeProperty diverged_;
     FloatProperty splitThreshold_;
@@ -277,8 +276,8 @@ private:
         float v, min, max;
     };
 
-    vec4 colorMapping(BoundedFloat scalar1, BoundedFloat scalar2, BoundedFloat thickness,
-                      BoundedFloat runlength = {0.f, 0.f, 0.f});
+    vec4 colorMapping(BoundedFloat scalar1, BoundedFloat scalar2, BoundedFloat magdiff,
+                      BoundedFloat thickness, BoundedFloat runlength = {0.f, 0.f, 0.f});
 
     using MyLineMesh = TypedMesh<buffertraits::PositionsBuffer, buffertraits::RadiiBuffer,
                                  buffertraits::NormalBuffer, buffertraits::ColorsBuffer,
