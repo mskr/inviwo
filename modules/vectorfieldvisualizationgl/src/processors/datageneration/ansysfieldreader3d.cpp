@@ -339,32 +339,6 @@ AnsysFieldReader3D::AnsysFieldReader3D()
 
     subgroupSelector_.addOption("all", "All", -1);
 
-    subgroupSelector_.onChange([&]() {
-        pointCloud_.setData(pointCloudToMesh3D(pointcloud));
-
-        if (!seedSurface_.hasData()) {
-            if (pointcloud.subgroups.empty()) {
-                LogWarn("No subgroups found. Maybe data was not read yet.");
-                return;
-            }
-            const auto selected = subgroupSelector_.getSelectedValue();
-            const auto start = selected >= 0 ? pointcloud.subgroups[selected].start : 0;
-            const auto end =
-                selected >= 0 ? pointcloud.subgroups[selected].end : pointcloud.points.size();
-            auto seeds = std::make_shared<std::vector<vec3>>(pointcloud.points.begin() + start,
-                                                             pointcloud.points.begin() + end);
-            if (end - start > numSeeds_.get()) {
-                auto reduced = std::make_shared<std::vector<vec3>>();
-                std::default_random_engine generator;
-                std::uniform_int_distribution<int> distribution(0, seeds->size());
-                for (int i = 0; i < numSeeds_.get(); i++)
-                    reduced->push_back(seeds->at(distribution(generator)));
-                seeds = reduced;
-            }
-            streamlineSeeds_.setData(seeds);
-        }
-    });
-
     insideTestPoint_.onChange([this]() {
         if (velocitySampler) {
             auto mesh = std::make_shared<Mesh>(DrawType::Points, ConnectivityType::None);
@@ -466,6 +440,30 @@ void AnsysFieldReader3D::process() {
     for (const auto g : pointcloud.subgroups) {
         subgroupSelector_.addOption(std::to_string(g.id), std::to_string(g.id), g.id);
     }
+    
+        pointCloud_.setData(pointCloudToMesh3D(pointcloud));
+
+        if (!seedSurface_.hasData()) {
+            /*if (pointcloud.subgroups.empty()) {
+                LogWarn("No subgroups found. Maybe data was not read yet.");
+                return;
+            }*/
+            const auto selected = subgroupSelector_.getSelectedValue();
+            const auto start = selected >= 0 ? pointcloud.subgroups[selected].start : 0;
+            const auto end =
+                selected >= 0 ? pointcloud.subgroups[selected].end : pointcloud.points.size();
+            auto seeds = std::make_shared<std::vector<vec3>>(pointcloud.points.begin() + start,
+                                                             pointcloud.points.begin() + end);
+            if (end - start > numSeeds_.get()) {
+                auto reduced = std::make_shared<std::vector<vec3>>();
+                std::default_random_engine generator;
+                std::uniform_int_distribution<int> distribution(0, seeds->size());
+                for (int i = 0; i < numSeeds_.get(); i++)
+                    reduced->push_back(seeds->at(distribution(generator)));
+                seeds = reduced;
+            }
+            streamlineSeeds_.setData(seeds);
+        }
 
     if (seedSurface_.hasData()) seedOnInputSurface();
 }
